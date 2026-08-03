@@ -247,7 +247,7 @@ func (g *getDirectoryUsageTool) Name() string {
 }
 
 func (g *getDirectoryUsageTool) Description() string {
-	return "获取指定目录下的磁盘占用，使用该方法可以读取沙盒环境下的文件占用信息"
+	return "获取指定目录下的磁盘占用，使用该方法可以读取沙盒环境下的文件占用信息. 一个目录下最多返回 200 个子文件，超过的部分将被截断"
 }
 
 func (g *getDirectoryUsageTool) invoke(ctx *diskCleanerContext, parameter string) (any, error) {
@@ -260,6 +260,9 @@ func (g *getDirectoryUsageTool) invoke(ctx *diskCleanerContext, parameter string
 	files, err := ctx.FileTree.Get(treePath)
 	if err != nil {
 		return nil, err
+	}
+	if len(files) > 200 {
+		files = files[:200]
 	}
 	result, err := json.Marshal(files)
 	if err != nil {
