@@ -15,6 +15,7 @@ type activeTask struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	language string
+	scanMode string
 }
 
 func (service *Service) run(task *activeTask) {
@@ -60,7 +61,7 @@ func (service *Service) run(task *activeTask) {
 	service.mu.Unlock()
 	service.emit(EventTaskUpdated, snapshot)
 
-	result, err := service.analyzer.Analyze(task.ctx, tree, task.language, func(delta string) {
+	result, err := service.analyzer.Analyze(task.ctx, tree, task.language, task.scanMode, func(delta string) {
 		service.appendLLMDelta(task, delta)
 	})
 	if err != nil {

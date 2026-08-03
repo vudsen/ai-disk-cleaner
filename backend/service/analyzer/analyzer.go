@@ -31,6 +31,7 @@ func (analyzer *Service) Analyze(
 	ctx context.Context,
 	tree *modelscanner.FileTree,
 	language string,
+	scanMode string,
 	onDelta func(string),
 ) (*cleaningrecord.AnalysisResult, error) {
 	if tree == nil {
@@ -39,6 +40,10 @@ func (analyzer *Service) Analyze(
 	if onDelta == nil {
 		onDelta = func(string) {}
 	}
+	prompt, err := systemPromptForMode(scanMode)
+	if err != nil {
+		return nil, err
+	}
 	config, err := analyzer.loadLLMConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -46,7 +51,7 @@ func (analyzer *Service) Analyze(
 	client := newOpenAIClient(config)
 
 	messages := []openai.ChatCompletionMessageParamUnion{
-		openai.SystemMessage(systemPrompt),
+		openai.SystemMessage(prompt),
 		openai.UserMessage(i18n.AnalyzerUserPrompt(language)),
 	}
 	manager := newManager()

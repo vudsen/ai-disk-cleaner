@@ -69,6 +69,7 @@ func TestAnalyzerStreamsTextAndReturnsUsage(t *testing.T) {
 			},
 		},
 		"zh_CN",
+		"fast",
 		func(delta string) { deltas.WriteString(delta) },
 	)
 	if err != nil {
