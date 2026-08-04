@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -66,9 +68,55 @@ func (analyzer *Service) loadLLMConfig(ctx context.Context) (llmConfig, error) {
 	return config, nil
 }
 
+type debugTransport struct {
+	rt http.RoundTripper
+}
+
+func truncate(s string, max int) string {
+	runes := []rune(s)
+	if len(runes) <= max {
+		return s
+	}
+	return string(runes[:max]) + "..."
+}
+func (t debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.rt.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+
+	if resp.StatusCode >= 400 ||
+		!strings.Contains(contentType, "text/event-stream") {
+
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+
+		return nil, fmt.Errorf(
+			"invalid LLM response: status=%d content-type=%s body=%s",
+			resp.StatusCode,
+			contentType,
+			truncate(string(body), 1024),
+		)
+	}
+
+	return resp, nil
+}
 func newOpenAIClient(config llmConfig) openai.Client {
+	client := &http.Client{
+		Transport: debugTransport{
+			rt: http.DefaultTransport,
+		},
+	}
 	return openai.NewClient(
 		option.WithAPIKey(config.secret),
 		option.WithBaseURL(config.baseURL),
+		//option.WithDebugLog(log.New(
+		//	os.Stdout,
+		//	"[openai] ",
+		//	log.LstdFlags,
+		//)),
+		option.WithHTTPClient(client),
 	)
 }
