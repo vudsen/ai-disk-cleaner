@@ -3,3 +3,4 @@ node_modules
 frontend/dist
 .idea/
 *.db
+test/fake_directory

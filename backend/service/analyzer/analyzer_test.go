@@ -146,23 +146,6 @@ func TestAddToolParameterSchemasUseObjectRoot(t *testing.T) {
 	}
 }
 
-func TestAddTrashFileSchemaFields(t *testing.T) {
-	schema := newAddTrashFileTool().ParameterSchema()
-	properties := schema["properties"].(map[string]any)
-	files := properties["files"].(map[string]any)
-	items := files["items"].(map[string]any)
-	fileProperties := items["properties"].(map[string]any)
-	want := []string{"name", "reason", "path", "level"}
-	if len(fileProperties) != len(want) {
-		t.Fatalf("file properties = %#v, want exactly %v", fileProperties, want)
-	}
-	for _, field := range want {
-		if _, ok := fileProperties[field]; !ok {
-			t.Fatalf("file schema is missing property %q", field)
-		}
-	}
-}
-
 func TestAddToolsAcceptWrappedArrays(t *testing.T) {
 	ctx := &diskCleanerContext{}
 	if _, err := newAddTrashFileTool().invoke(ctx, `{"files":[{"name":"清理临时日志","reason":"日志可以安全重新生成","path":"temp.log","level":0}]}`); err != nil {

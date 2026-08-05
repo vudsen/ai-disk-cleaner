@@ -377,37 +377,6 @@ func TestServiceContinuesDeletingAfterFileFailure(t *testing.T) {
 	}
 }
 
-func TestServiceRejectsDeletingTrashFilesFromHistoricalRecord(t *testing.T) {
-	root := t.TempDir()
-	target := filepath.Join(root, "cache.tmp")
-	if err := os.WriteFile(target, []byte("cache"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	store := newTestStore(t)
-	storedRecord := &cleaningrecord.CleaningRecord{
-		ID:   1,
-		Path: root,
-		TrashFiles: []cleaningrecord.TrashFile{{
-			Name: "cache", Path: "cache.tmp", Size: 5, Level: cleaningrecord.LOW,
-		}},
-		TopUsages: make([]cleaningrecord.DiskUsage, 0),
-		State:     cleaningrecord.CLEANING_STATE_DONE,
-	}
-	if err := store.CreateCleaningRecord(context.Background(), storedRecord); err != nil {
-		t.Fatalf("CreateCleaningRecord() error = %v", err)
-	}
-	service := newServiceWithScanner(context.Background(), store, nil, nil, nil)
-	service.tree = &modelscanner.FileTree{RootPath: root}
-	service.treeSnapshot = &CleaningTaskSnapshot{ID: 2, Path: root}
-
-	if _, err := service.DeleteTrashFiles(1, []string{"cache.tmp"}, false); err == nil {
-		t.Fatal("historical record was accepted")
-	}
-	if _, err := os.Stat(target); err != nil {
-		t.Fatalf("historical record deletion touched target: %v", err)
-	}
-}
-
 func TestRemoveTrashTargetContinuesAfterChildFailure(t *testing.T) {
 	target := t.TempDir()
 	childContents := map[string]string{

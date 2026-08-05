@@ -25,3 +25,8 @@ func GetContext() context.Context {
 	}
 	return applicationContext
 }
+
+// HasWailsEvents reports whether the context came from the Wails lifecycle.
+func HasWailsEvents() bool {
+	return applicationContext != nil && applicationContext.Value("events") != nil
+}

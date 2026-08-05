@@ -94,13 +94,17 @@ func NewService(
 	if scanner == nil {
 		panic("cleaner service: scanner is nil")
 	}
+	emit := EventEmitter(func(string, any) {})
+	if appctx.HasWailsEvents() {
+		emit = func(eventName string, payload any) {
+			runtime.EventsEmit(appctx.GetContext(), eventName, payload)
+		}
+	}
 	return newServiceWithScanner(
 		appctx.GetContext(),
 		store,
 		analyzer,
-		func(eventName string, payload any) {
-			runtime.EventsEmit(appctx.GetContext(), eventName, payload)
-		},
+		emit,
 		scanner.ParseGDUContext,
 	)
 }
