@@ -51,7 +51,7 @@ func TestBuildToolsFiltersByAgentContextState(t *testing.T) {
 			if slices.Contains(names, analyzeDirectoryToolName) != tt.wantAnalyze {
 				t.Errorf("analyze_directory availability in %#v", names)
 			}
-			if slices.Contains(names, clearAnalyzeHistoryToolName) != tt.wantClear {
+			if slices.Contains(names, compatContextToolName) != tt.wantClear {
 				t.Errorf("clear_analyze_history availability in %#v", names)
 			}
 			for _, alwaysSupported := range []string{"add_trash_file", "add_top_usages"} {
@@ -65,7 +65,7 @@ func TestBuildToolsFiltersByAgentContextState(t *testing.T) {
 
 func TestClearAnalyzeHistoryToolContractAndRegistration(t *testing.T) {
 	tool := newClearAnalyzeHistoryTool()
-	if tool.Name() != clearAnalyzeHistoryToolName {
+	if tool.Name() != compatContextToolName {
 		t.Fatalf("tool name = %q", tool.Name())
 	}
 	if !strings.Contains(tool.Description(), "严格后代") || !strings.Contains(tool.Description(), "自身") {
@@ -113,7 +113,7 @@ func TestClearAnalyzeHistoryToolContractAndRegistration(t *testing.T) {
 	}
 
 	manager := newManager()
-	if manager.toolMap[clearAnalyzeHistoryToolName] == nil {
+	if manager.toolMap[compatContextToolName] == nil {
 		t.Fatal("clear_analyze_history is not registered")
 	}
 	definitions, err := json.Marshal(buildTools(manager, &Agent{state: agentStateMedium}))
@@ -129,7 +129,7 @@ func TestClearAnalyzeHistoryToolContractAndRegistration(t *testing.T) {
 		mustHistoryMessage(t, `{"role":"assistant","tool_calls":[{"id":"child","type":"function","function":{"name":"analyze_directory","arguments":"not-json"}}]}`),
 		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"child","content":"path,totalSize,type\n/foo/child,10,0\n"}`),
 	}}
-	result, err := manager.Invoke(clearAnalyzeHistoryToolName, `{"paths":["/foo"]}`, agent)
+	result, err := manager.Invoke(compatContextToolName, `{"paths":["/foo"]}`, agent)
 	if err != nil {
 		t.Fatalf("invoke registered clear tool: %v", err)
 	}

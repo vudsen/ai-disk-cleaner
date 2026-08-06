@@ -6,14 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
 )
 
 const (
-	analyzeDirectoryToolName    = "analyze_directory"
-	clearAnalyzeHistoryToolName = "clear_analyze_history"
+	analyzeDirectoryToolName = "analyze_directory"
+	compatContextToolName    = "compat_context"
 )
 
 type clearAnalyzeHistoryTool struct{}
@@ -27,11 +29,11 @@ func newClearAnalyzeHistoryTool() *clearAnalyzeHistoryTool {
 }
 
 func (tool *clearAnalyzeHistoryTool) Name() string {
-	return clearAnalyzeHistoryToolName
+	return compatContextToolName
 }
 
 func (tool *clearAnalyzeHistoryTool) Description() string {
-	return "仅用于清除对话中的扫描历史，不会删除磁盘文件。paths 只能选择已经读取完后代扫描结果、已完成判断且后续不再引用的具体非根子目录；绝对禁止传入 / 根目录，也不要选择仍在分析的目录分支。工具直接过滤历史 tool response CSV 中属于目标严格后代的扫描行，目标路径自身仍会保留，不会修改 assistant 消息"
+	return "整理上下文"
 }
 
 func (tool *clearAnalyzeHistoryTool) IsSupport(agent *Agent) bool {
@@ -46,7 +48,11 @@ func (tool *clearAnalyzeHistoryTool) invoke(agent *Agent, parameter string) (str
 	if arguments.Paths == nil {
 		return "", fmt.Errorf("paths is required")
 	}
-	return clearAnalyzeHistory(agent, arguments.Paths)
+	targets, err := normalizeAnalyzeHistoryTargets(arguments.Paths)
+	if err != nil {
+		return "", fmt.Errorf("normalize analyze history targets: %w", err)
+	}
+	return clearAnalyzeHistory(agent, targets)
 }
 
 func (tool *clearAnalyzeHistoryTool) ParameterSchema() map[string]any {
@@ -55,7 +61,7 @@ func (tool *clearAnalyzeHistoryTool) ParameterSchema() map[string]any {
 		"properties": map[string]any{
 			"paths": map[string]any{
 				"type":        "array",
-				"description": "要压缩扫描历史的具体非根子目录。仅选择已经读取、完成判断且后续不再使用的目录分支；禁止传入 / 根目录。每项必须以 / 开头并使用绝对路径",
+				"description": "要压缩扫描历史的具体非根子目录。",
 				"items": map[string]any{
 					"type":    "string",
 					"pattern": "^/[^\\\\]*$",
@@ -65,10 +71,6 @@ func (tool *clearAnalyzeHistoryTool) ParameterSchema() map[string]any {
 		"required":             []string{"paths"},
 		"additionalProperties": false,
 	}
-}
-
-type clearAnalyzeHistoryResult struct {
-	RemovedAnalyzeEntries int `json:"removedAnalyzeEntries"`
 }
 
 type messageGroup struct {
@@ -89,7 +91,7 @@ func splitMessageGroup(messages []openai.ChatCompletionMessageParamUnion) []mess
 				})
 			}
 			headAssistantMessage = &message
-			toolResponses = make([]openai.ChatCompletionMessageParamUnion, len(headAssistantMessage.OfAssistant.ToolCalls))
+			toolResponses = make([]openai.ChatCompletionMessageParamUnion, 0, len(headAssistantMessage.OfAssistant.ToolCalls))
 			continue
 		}
 		if message.OfTool != nil {
@@ -97,6 +99,9 @@ func splitMessageGroup(messages []openai.ChatCompletionMessageParamUnion) []mess
 		}
 	}
 	return result
+}
+func isCsvHeader(content string) bool {
+	return strings.Index(content, "path,totalSize,type") >= 0
 }
 
 func clearAnalyzeHistory(agent *Agent, paths []string) (string, error) {
@@ -110,7 +115,7 @@ func clearAnalyzeHistory(agent *Agent, paths []string) (string, error) {
 		analyzeToolLen := 0
 		toolCalls := group.assistant.OfAssistant.ToolCalls
 		for i, toolCall := range toolCalls {
-			if toolCall.OfFunction.Function.Name == analyzeDirectoryToolName && group.toolResponses[i].OfTool.Content.OfString.String() != analyzeDirectoryRefuseMessage {
+			if toolCall.OfFunction.Function.Name == analyzeDirectoryToolName && isCsvHeader(group.toolResponses[i].OfTool.Content.OfString.String()) {
 				analyzeToolLen++
 				if firstAnalyzeRespIndex < 0 {
 					firstAnalyzeRespIndex = i
@@ -125,7 +130,7 @@ func clearAnalyzeHistory(agent *Agent, paths []string) (string, error) {
 		if analyzeToolLen > 1 {
 			// do combination.
 			builder := strings.Builder{}
-			builder.WriteString("path totalSize type\n")
+			builder.WriteString("path,totalSize,type\n")
 			newCalls := make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(toolCalls)-analyzeToolLen+1)
 			newTools := make([]openai.ChatCompletionMessageParamUnion, 0, len(toolCalls)-analyzeToolLen+1)
 			for i, toolCall := range toolCalls {
@@ -147,16 +152,17 @@ func clearAnalyzeHistory(agent *Agent, paths []string) (string, error) {
 							},
 						})
 					}
-					break
+					continue
 				}
 				newCalls = append(newCalls, toolCall)
 				newTools = append(newTools, group.toolResponses[i])
 			}
 			newTools[firstAnalyzeRespIndex].OfTool.Content.OfString = openai.String(builder.String())
 			group.assistant.OfAssistant.ToolCalls = newCalls
+			group.toolResponses = newTools
 		}
 		// do clear
-		err := doClear(paths, group.toolResponses)
+		err := doClear(paths, group.assistant.OfAssistant.ToolCalls, group.toolResponses, analyzeToolLen > 1)
 		if err != nil {
 			return "", err
 		}
@@ -164,74 +170,111 @@ func clearAnalyzeHistory(agent *Agent, paths []string) (string, error) {
 		result = append(result, group.assistant)
 		result = append(result, group.toolResponses...)
 	}
+	if agent.messages[len(agent.messages)-1].OfAssistant != nil {
+		// clear_analyze_history tool call
+		result = append(result, agent.messages[len(agent.messages)-1])
+	}
 	agent.messages = result
 	return "Ok", nil
 }
 
 // / 替换分析结果
-func doClear(paths []string, toolMessages []openai.ChatCompletionMessageParamUnion) error {
-
-}
-
-func compactAnalyzeHistory(
-	messages []openai.ChatCompletionMessageParamUnion,
+func doClear(
 	targets []string,
-) ([]openai.ChatCompletionMessageParamUnion, int, error) {
-	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
-	removed := 0
-	for _, message := range messages {
-		toolResponse := message.OfTool
-		if toolResponse == nil || !toolResponse.Content.OfString.Valid() {
-			result = append(result, message)
+	toolCalls []openai.ChatCompletionMessageToolCallUnionParam,
+	toolMessages []openai.ChatCompletionMessageParamUnion,
+	needSort bool,
+) error {
+	type replacement struct {
+		tool    *openai.ChatCompletionToolMessageParam
+		content string
+	}
+	replacements := make([]replacement, 0)
+
+	for index := range toolMessages {
+		if index >= len(toolCalls) || toolCalls[index].OfFunction == nil ||
+			toolCalls[index].OfFunction.Function.Name != analyzeDirectoryToolName {
+			continue
+		}
+		toolMessage := toolMessages[index].OfTool
+		if toolMessage == nil || !toolMessage.Content.OfString.Valid() {
 			continue
 		}
 
-		filtered, count, ok := filterAnalyzeDirectoryResponseCSV(toolResponse.Content.OfString.Value, targets)
-		if !ok || count == 0 {
-			result = append(result, message)
+		content := toolMessage.Content.OfString.Value
+		if !isCsvHeader(content) {
 			continue
 		}
-		updatedResponse := *toolResponse
-		updatedResponse.Content.OfString.Value = filtered
-		message.OfTool = &updatedResponse
-		result = append(result, message)
-		removed += count
-	}
-	return result, removed, nil
-}
 
-func filterAnalyzeDirectoryResponseCSV(content string, targets []string) (string, int, bool) {
-	reader := csv.NewReader(strings.NewReader(content))
-	records, err := reader.ReadAll()
-	if err != nil || len(records) == 0 {
-		return content, 0, false
-	}
-	header := records[0]
-	if len(header) != 3 || header[0] != "path" || header[1] != "totalSize" || header[2] != "type" {
-		return content, 0, false
-	}
-
-	kept := make([][]string, 0, len(records))
-	kept = append(kept, header)
-	removed := 0
-	for _, record := range records[1:] {
-		candidate, err := normalizeAnalyzeHistoryPath(record[0])
-		if err == nil && isStrictAnalyzeHistoryDescendant(candidate, targets) {
-			removed++
+		reader := csv.NewReader(strings.NewReader(content))
+		header, err := reader.Read()
+		if err != nil || len(header) != 3 ||
+			header[0] != "path" || header[1] != "totalSize" || header[2] != "type" {
 			continue
 		}
-		kept = append(kept, record)
-	}
-	if removed == 0 {
-		return content, 0, true
+		records, err := reader.ReadAll()
+		if err != nil {
+			return fmt.Errorf("decode analyze_directory CSV at tool message %d: %w", index, err)
+		}
+
+		kept := records[:0]
+		changed := false
+		for _, record := range records {
+			candidate, err := normalizeAnalyzeHistoryPath(record[0])
+			if err == nil && isStrictAnalyzeHistoryDescendant(candidate, targets) {
+				changed = true
+				continue
+			}
+			kept = append(kept, record)
+		}
+
+		if needSort {
+			type sortableRecord struct {
+				fields    []string
+				totalSize int64
+			}
+			sortable := make([]sortableRecord, len(kept))
+			for recordIndex, record := range kept {
+				totalSize, err := strconv.ParseInt(record[1], 10, 64)
+				if err != nil {
+					return fmt.Errorf(
+						"decode totalSize in analyze_directory CSV at tool message %d row %d: %w",
+						index,
+						recordIndex+2,
+						err,
+					)
+				}
+				sortable[recordIndex] = sortableRecord{fields: record, totalSize: totalSize}
+			}
+			sort.Slice(sortable, func(i, j int) bool {
+				if sortable[i].totalSize != sortable[j].totalSize {
+					return sortable[i].totalSize > sortable[j].totalSize
+				}
+				return sortable[i].fields[0] < sortable[j].fields[0]
+			})
+			for recordIndex := range sortable {
+				kept[recordIndex] = sortable[recordIndex].fields
+			}
+		}
+
+		if !changed && !needSort {
+			continue
+		}
+		var buffer bytes.Buffer
+		writer := csv.NewWriter(&buffer)
+		if err := writer.Write(header); err != nil {
+			return fmt.Errorf("encode analyze_directory CSV header at tool message %d: %w", index, err)
+		}
+		if err := writer.WriteAll(kept); err != nil {
+			return fmt.Errorf("encode analyze_directory CSV at tool message %d: %w", index, err)
+		}
+		replacements = append(replacements, replacement{tool: toolMessage, content: buffer.String()})
 	}
 
-	var buffer bytes.Buffer
-	writer := csv.NewWriter(&buffer)
-	if err := writer.WriteAll(kept); err != nil {
-		return content, 0, false
+	for _, item := range replacements {
+		item.tool.Content.OfString = openai.String(item.content)
 	}
-	return buffer.String(), removed, true
+	return nil
 }
 
 func normalizeAnalyzeHistoryTargets(paths []string) ([]string, error) {

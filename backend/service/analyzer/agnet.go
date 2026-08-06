@@ -83,7 +83,7 @@ func (agent *Agent) beforeCompletions() error {
 }
 
 func (agent *Agent) afterCompletions() {
-	if agent.totalTokens >= 7000 {
+	if agent.totalTokens >= 10000 {
 		myLog.Println("Switch to agent high state")
 		agent.state = agentStateHigh
 	} else {
@@ -96,7 +96,9 @@ WARNING: You have used half of the context size. Use 'clear_analyze_history' onl
 </agent_runtime_instruction>
 `
 const agentContextUsageHighSuffix = `<agent_runtime_instruction>
-URGENT: You have used most of the context size. Either stop scanning and summarize the final result, or use 'clear_analyze_history' only on specific non-root child directories whose descendant scan results you have already read, finished analyzing, and will no longer reference. Never pass '/' and do not clear active directory branches.
+**紧急: 您已用完大部分上下文空间**。你现在可以:
+- 停止扫描，并汇总最终结果
+- 暂时停止扫描，逐一排查所有 analyze_directory 工具调用结果，然后使用 clear_analyze_history 清除掉**所有**你不再需要的目录结果，你只有这一次机会，如果下次再次超过上下文限制，程序将会退出!
 </agent_runtime_instruction>
 `
 

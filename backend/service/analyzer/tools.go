@@ -242,8 +242,7 @@ const maxDirectoryEntries = 200
 type analyzeDirectoryTool struct{}
 
 type analyzeDirectoryParameters struct {
-	Path  string `json:"path"`
-	Depth int    `json:"depth"`
+	Path string `json:"path"`
 }
 
 type directoryUsageEntry struct {
@@ -263,7 +262,7 @@ func (g *analyzeDirectoryTool) Name() string {
 const analyzeDirectoryRefuseMessage = "this tool is disabled due to context limitation! Either stop scanning and summarise the final result or use 'clear_analyze_history' tool to reduce the context size"
 
 func (g *analyzeDirectoryTool) Description() string {
-	return "按指定深度展开文件树中的目录或文件，以 CSV 返回路径、总大小和类型；depth=1 返回目标节点及其一层直接子项，每个目录最多展示占用最大的 200 个直接子项"
+	return "按指定深度展开文件树中的目录或文件，以 CSV 返回路径、总大小和类型；每个目录最多展示占用最大的 200 个直接子项"
 }
 
 func (g *analyzeDirectoryTool) IsSupport(agent *Agent) bool {
@@ -284,9 +283,6 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	if strings.Contains(args.Path, `\`) {
 		return "", fmt.Errorf("path must use '/' as its separator: %q", args.Path)
 	}
-	if args.Depth < 1 {
-		return "", fmt.Errorf("depth must be at least 1")
-	}
 
 	treePath := modelscanner.NormalizeTreePath(args.Path)
 	node, err := agent.tree.FindNode(treePath)
@@ -294,11 +290,8 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 		return "", err
 	}
 
-	entries := make([]directoryUsageEntry, 0)
-	// The public depth is the number of descendant levels to expand. The
-	// traversal also counts the requested node itself, so add one here.
-	traversalDepth := args.Depth + 1
-	collectDirectoryUsage(&entries, node, treePath, traversalDepth)
+	entries := collectDirectoryUsage(node, treePath)
+
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].totalSize != entries[j].totalSize {
 			return entries[i].totalSize > entries[j].totalSize
@@ -327,33 +320,33 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	return buffer.String(), nil
 }
 
-func collectDirectoryUsage(entries *[]directoryUsageEntry, node *modelscanner.FileNode, treePath string, depth int) {
+func collectDirectoryUsage(node *modelscanner.FileNode, base string) []directoryUsageEntry {
 	typeID := 1
 	if node.IsDir() {
 		typeID = 0
 	}
-	*entries = append(*entries, directoryUsageEntry{
-		path:      treePath,
+	entries := make([]directoryUsageEntry, 0)
+	entries = append(entries, directoryUsageEntry{
+		path:      base,
 		totalSize: node.DiskSize,
 		typeID:    typeID,
 	})
-	if depth == 1 || !node.IsDir() {
-		return
+	for _, child := range node.Children {
+		myTypeID := 1
+		if child.IsDir() {
+			myTypeID = 0
+		}
+		entries = append(entries, directoryUsageEntry{
+			path:      path.Join(base, child.Name),
+			totalSize: child.DiskSize,
+			typeID:    myTypeID,
+		})
 	}
 
-	children := append([]*modelscanner.FileNode(nil), node.Children...)
-	sort.Slice(children, func(i, j int) bool {
-		if children[i].DiskSize != children[j].DiskSize {
-			return children[i].DiskSize > children[j].DiskSize
-		}
-		return children[i].Name < children[j].Name
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].totalSize > entries[j].totalSize
 	})
-	if len(children) > maxDirectoryEntries {
-		children = children[:maxDirectoryEntries]
-	}
-	for _, child := range children {
-		collectDirectoryUsage(entries, child, path.Join(treePath, child.Name), depth-1)
-	}
+	return entries
 }
 
 func (g *analyzeDirectoryTool) ParameterSchema() map[string]any {
@@ -365,13 +358,8 @@ func (g *analyzeDirectoryTool) ParameterSchema() map[string]any {
 				"description": "文件树路径，必须以 / 开头并使用 / 作为路径分隔符",
 				"pattern":     "^/",
 			},
-			"depth": map[string]any{
-				"type":        "integer",
-				"description": "展开的子层数，从 1 开始；1 表示返回 path 对应节点及其一层直接子项",
-				"minimum":     1,
-			},
 		},
-		"required":             []string{"path", "depth"},
+		"required":             []string{"path"},
 		"additionalProperties": false,
 	}
 }
