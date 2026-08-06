@@ -29,6 +29,9 @@ type Agent struct {
 	language         string
 	state            agentContextState
 	totalTokens      int64
+	statistics       *diskCleanerContext
+	TrashFiles       []cleaningrecord.TrashFile
+	TopUsages        []cleaningrecord.DiskUsage
 }
 
 func newAgent(
@@ -54,6 +57,8 @@ func newAgent(
 		language:         language,
 		state:            agentContextStateLow,
 		totalTokens:      0,
+		TrashFiles:       make([]cleaningrecord.TrashFile, 0),
+		TopUsages:        make([]cleaningrecord.DiskUsage, 0),
 	}, nil
 }
 
