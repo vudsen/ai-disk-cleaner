@@ -260,8 +260,10 @@ func (g *analyzeDirectoryTool) Name() string {
 	return "analyze_directory"
 }
 
+const analyzeDirectoryRefuseMessage = "this tool is disabled due to context limitation! Either stop scanning and summarise the final result or use 'clear_analyze_history' tool to reduce the context size"
+
 func (g *analyzeDirectoryTool) Description() string {
-	return "按指定深度分析文件树中的目录或文件，以 CSV 返回路径、总大小和类型；每个目录最多展示占用最大的 200 个直接子项"
+	return "按指定深度展开文件树中的目录或文件，以 CSV 返回路径、总大小和类型；depth=1 返回目标节点及其一层直接子项，每个目录最多展示占用最大的 200 个直接子项"
 }
 
 func (g *analyzeDirectoryTool) IsSupport(agent *Agent) bool {
@@ -270,7 +272,7 @@ func (g *analyzeDirectoryTool) IsSupport(agent *Agent) bool {
 
 func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, error) {
 	if agent.state == agentStateHigh {
-		return "", errors.New("This tool is disabled due to context limitation! Either stop scanning and summarise the final result or use 'clear_analyze_history' tool to reduce the context size")
+		return "", errors.New(analyzeDirectoryRefuseMessage)
 	}
 	var args analyzeDirectoryParameters
 	if err := json.Unmarshal([]byte(parameter), &args); err != nil {
@@ -293,13 +295,9 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	}
 
 	entries := make([]directoryUsageEntry, 0)
-	traversalDepth := args.Depth
-	if traversalDepth > 1 {
-		// depth=1 only returns the requested node. For larger values, depth is
-		// the number of descendant levels to inspect, matching the tool's
-		// depth=2 example (/foo and /foo/xxx.exe are both included from /).
-		traversalDepth++
-	}
+	// The public depth is the number of descendant levels to expand. The
+	// traversal also counts the requested node itself, so add one here.
+	traversalDepth := args.Depth + 1
 	collectDirectoryUsage(&entries, node, treePath, traversalDepth)
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].totalSize != entries[j].totalSize {
@@ -369,7 +367,7 @@ func (g *analyzeDirectoryTool) ParameterSchema() map[string]any {
 			},
 			"depth": map[string]any{
 				"type":        "integer",
-				"description": "搜索深度，从 1 开始；1 表示只显示 path 对应的目录或文件",
+				"description": "展开的子层数，从 1 开始；1 表示返回 path 对应节点及其一层直接子项",
 				"minimum":     1,
 			},
 		},

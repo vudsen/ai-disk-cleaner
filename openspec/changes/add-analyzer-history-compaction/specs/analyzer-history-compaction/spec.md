@@ -31,61 +31,61 @@ The analyzer MUST expose a strict function tool named clear_analyze_history with
 - **THEN** the invocation succeeds
 - **AND** the result reports that zero scan calls were removed
 
-### Requirement: Compaction removes only strict descendant scan records
-For each normalized target path, the tool MUST remove historical analyze_directory calls whose requested path is a strict descendant of that target. It MUST retain scans of the target itself, its ancestors, unrelated paths, and paths that merely share a textual prefix.
+### Requirement: Compaction removes only strict descendant CSV rows
+For each normalized target path, the tool MUST scan historical tool response content that uses the analyze_directory CSV format and remove rows whose path is a strict descendant of that target. It MUST retain rows for the target itself, its ancestors, unrelated paths, and paths that merely share a textual prefix.
 
 #### Scenario: Preserve target and remove descendants
-- **GIVEN** history contains scans for /foo/bar, /foo/bar/child, and /foo/bar/child/file
+- **GIVEN** a historical tool response CSV contains rows for /foo/bar, /foo/bar/child, and /foo/bar/child/file
 - **WHEN** clear_analyze_history is invoked with paths containing /foo/bar
-- **THEN** the scans for /foo/bar/child and /foo/bar/child/file are removed
-- **AND** the scan for /foo/bar remains
+- **THEN** the rows for /foo/bar/child and /foo/bar/child/file are removed
+- **AND** the row for /foo/bar remains
 
 #### Scenario: Preserve similar prefix
-- **GIVEN** history contains scans for /foo/bar/child and /foo/bar2/child
+- **GIVEN** a historical tool response CSV contains rows for /foo/bar/child and /foo/bar2/child
 - **WHEN** clear_analyze_history is invoked for /foo/bar
-- **THEN** the scan for /foo/bar/child is removed
-- **AND** the scan for /foo/bar2/child remains
+- **THEN** the row for /foo/bar/child is removed
+- **AND** the row for /foo/bar2/child remains
 
 #### Scenario: Normalize paths
-- **GIVEN** history contains a scan for /foo/bar/child
+- **GIVEN** a historical tool response CSV contains a row for /foo/bar/child
 - **WHEN** the tool is invoked with an equivalent target containing redundant separators, dot segments, or a trailing slash
 - **THEN** descendant matching uses the normalized logical path
-- **AND** the child scan is removed
+- **AND** the child row is removed
 
 #### Scenario: Root target
-- **GIVEN** history contains scans for / and /foo
+- **GIVEN** a historical tool response CSV contains rows for / and /foo
 - **WHEN** the tool is invoked for /
-- **THEN** the scan for /foo is removed
-- **AND** the scan for / remains
+- **THEN** the row for /foo is removed
+- **AND** the row for / remains
 
 #### Scenario: Multiple overlapping targets
-- **GIVEN** history contains scans below multiple target paths
+- **GIVEN** historical tool response CSV rows exist below multiple target paths
 - **WHEN** the tool is invoked with duplicate or overlapping target paths
-- **THEN** matching scan records are removed according to the union of all targets
-- **AND** each matching scan record is counted at most once
+- **THEN** matching CSV rows are removed according to the union of all targets
+- **AND** each matching row is counted at most once
 
 ### Requirement: Compaction preserves message-history integrity
-The tool MUST delete a matched analyze_directory function call together with its tool result identified by the same tool-call ID. It MUST preserve unrelated message content and tool calls, including the clear_analyze_history call and its result.
+The tool MUST filter matching rows directly from parseable analyze_directory CSV tool responses. It MUST NOT parse or modify assistant messages, and it MUST retain every tool response message and tool-call ID.
 
-#### Scenario: Remove paired call and result
-- **GIVEN** a completed matching analyze_directory call and tool result share a tool-call ID
+#### Scenario: Filter response without changing message pairing
+- **GIVEN** a tool response contains matching and non-matching analyze_directory CSV rows
 - **WHEN** history compaction runs
-- **THEN** both the function call and its corresponding result are removed
-- **AND** no orphaned result for that call remains
+- **THEN** only matching CSV rows are removed from the response content
+- **AND** the assistant tool call, tool response message, and tool-call ID remain
 
-#### Scenario: Preserve mixed assistant message
-- **GIVEN** an assistant message contains a matching analyze_directory call and one or more unrelated tool calls or text
+#### Scenario: Ignore assistant arguments
+- **GIVEN** an assistant tool call has malformed or unrelated arguments while its tool response contains a valid analyze_directory CSV
 - **WHEN** history compaction runs
-- **THEN** only the matching call and its paired result are removed
-- **AND** the unrelated calls, their results, and the assistant text remain
+- **THEN** matching is determined only from paths in the tool response CSV
+- **AND** the assistant message remains byte-for-byte equivalent
 
-#### Scenario: Preserve unsafe-to-classify records
-- **GIVEN** an analyze_directory call has malformed arguments or cannot be safely paired with a result
+#### Scenario: Preserve non-CSV response
+- **GIVEN** a tool response is malformed, non-CSV, or does not have the analyze_directory CSV header
 - **WHEN** history compaction runs
-- **THEN** the call and any uncertain related messages remain unchanged
+- **THEN** the response remains unchanged
 
 #### Scenario: Repeat compaction
-- **WHEN** the same valid compaction request is invoked more than once without adding new matching scans
+- **WHEN** the same valid compaction request is invoked more than once without adding new matching CSV rows
 - **THEN** subsequent invocations succeed with zero additional removals
 - **AND** the remaining history is unchanged
 
@@ -109,3 +109,30 @@ Every analyzer tool MUST declare whether it supports the active Agent, and the a
 #### Scenario: State change affects the next completion
 - **WHEN** the Agent context state changes between model completions
 - **THEN** the next completion request uses tool definitions filtered for the new state
+
+### Requirement: Model guidance favors narrow completed branches
+Whenever clear_analyze_history is presented or recommended to the model, the guidance MUST instruct the model to select only specific non-root directories whose descendant scan results have already been read, whose analysis is complete, and which will no longer be referenced. The guidance MUST explicitly tell the model not to pass /.
+
+#### Scenario: Tool definition discourages root-wide clearing
+- **WHEN** clear_analyze_history is included in the advertised tools
+- **THEN** its description and paths parameter guidance explicitly prohibit the / root path
+- **AND** they direct the model toward completed, no-longer-needed child directory branches
+
+#### Scenario: Runtime context warning recommends safe compaction
+- **WHEN** the Agent emits a medium or high context-usage instruction
+- **THEN** the instruction recommends clearing only previously read and no-longer-needed non-root child directories
+- **AND** it explicitly says never to pass /
+
+### Requirement: Directory analysis depth expands descendant levels
+The analyzer MUST interpret analyze_directory depth as the number of descendant levels to expand while also including the requested node in its CSV result.
+
+#### Scenario: Root depth one exposes direct children
+- **GIVEN** the file-tree root contains direct children and deeper descendants
+- **WHEN** analyze_directory is invoked with path / and depth 1
+- **THEN** the CSV result includes the root and its direct children
+- **AND** it does not include grandchildren
+
+#### Scenario: Depth two exposes grandchildren
+- **GIVEN** a requested directory contains children and grandchildren
+- **WHEN** analyze_directory is invoked with depth 2
+- **THEN** the CSV result includes the requested node, its children, and its grandchildren

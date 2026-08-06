@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -70,6 +71,11 @@ func TestClearAnalyzeHistoryToolContractAndRegistration(t *testing.T) {
 	if !strings.Contains(tool.Description(), "严格后代") || !strings.Contains(tool.Description(), "自身") {
 		t.Fatalf("tool description does not explain preservation boundary: %q", tool.Description())
 	}
+	for _, phrase := range []string{"禁止传入 / 根目录", "已经读取", "后续不再"} {
+		if !strings.Contains(tool.Description(), phrase) {
+			t.Errorf("tool description is missing safe-compaction guidance %q: %q", phrase, tool.Description())
+		}
+	}
 
 	schema := tool.ParameterSchema()
 	if schema["type"] != "object" || schema["additionalProperties"] != false {
@@ -83,6 +89,12 @@ func TestClearAnalyzeHistoryToolContractAndRegistration(t *testing.T) {
 	paths := properties["paths"].(map[string]any)
 	if paths["type"] != "array" {
 		t.Fatalf("paths schema = %#v", paths)
+	}
+	pathDescription, _ := paths["description"].(string)
+	for _, phrase := range []string{"禁止传入 / 根目录", "已经读取", "后续不再"} {
+		if !strings.Contains(pathDescription, phrase) {
+			t.Errorf("paths description is missing safe-compaction guidance %q: %q", phrase, pathDescription)
+		}
 	}
 	items := paths["items"].(map[string]any)
 	pattern, ok := items["pattern"].(string)
@@ -114,15 +126,30 @@ func TestClearAnalyzeHistoryToolContractAndRegistration(t *testing.T) {
 	}
 
 	agent := &Agent{messages: []openai.ChatCompletionMessageParamUnion{
-		mustHistoryMessage(t, `{"role":"assistant","tool_calls":[{"id":"child","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/child\",\"depth\":1}"}}]}`),
-		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"child","content":"result"}`),
+		mustHistoryMessage(t, `{"role":"assistant","tool_calls":[{"id":"child","type":"function","function":{"name":"analyze_directory","arguments":"not-json"}}]}`),
+		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"child","content":"path,totalSize,type\n/foo/child,10,0\n"}`),
 	}}
 	result, err := manager.Invoke(clearAnalyzeHistoryToolName, `{"paths":["/foo"]}`, agent)
 	if err != nil {
 		t.Fatalf("invoke registered clear tool: %v", err)
 	}
-	if result != `{"removedAnalyzeCalls":1}` || len(agent.messages) != 0 {
+	if result != `{"removedAnalyzeEntries":1}` || len(agent.messages) != 2 {
 		t.Fatalf("result = %s, history length = %d", result, len(agent.messages))
+	}
+}
+
+func TestContextUsagePromptsRecommendNarrowCompletedBranches(t *testing.T) {
+	for name, prompt := range map[string]string{
+		"medium": agentContextUsageMediumSuffix,
+		"high":   agentContextUsageHighSuffix,
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, phrase := range []string{"specific non-root child directories", "already read", "no longer reference", "Never pass '/'"} {
+				if !strings.Contains(prompt, phrase) {
+					t.Errorf("runtime prompt is missing %q: %q", phrase, prompt)
+				}
+			}
+		})
 	}
 }
 
@@ -186,49 +213,56 @@ func TestClearAnalyzeHistoryPreservesIntegrityAndIsIdempotent(t *testing.T) {
 			"role":"assistant",
 			"content":"keep this summary",
 			"tool_calls":[
-				{"id":"keep-target","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/bar\",\"depth\":1}"}},
-				{"id":"remove-child","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/bar/child\",\"depth\":2}"}},
-				{"id":"keep-prefix","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/bar2/child\",\"depth\":1}"}},
-				{"id":"keep-unpaired","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/bar/unpaired\",\"depth\":1}"}},
-				{"id":"keep-malformed","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":"}},
+				{"id":"mixed-csv","type":"function","function":{"name":"analyze_directory","arguments":"not-json"}},
+				{"id":"non-csv","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/bar/child\",\"depth\":1}"}},
 				{"id":"keep-other","type":"function","function":{"name":"add_top_usages","arguments":"{\"usages\":[]}"}}
 			]
 		}`),
-		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"keep-target","content":"target"}`),
-		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"remove-child","content":"child"}`),
-		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"keep-prefix","content":"prefix"}`),
-		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"keep-malformed","content":"error"}`),
+		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"mixed-csv","content":"path,totalSize,type\n/foo/bar,100,0\n/foo/bar/child,40,0\n/foo/bar/child/file.log,20,1\n/foo/bar2/child,30,0\n/other,10,0\n"}`),
+		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"non-csv","content":"not csv"}`),
 		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"keep-other","content":"true"}`),
-		mustHistoryMessage(t, `{
-			"role":"assistant",
-			"tool_calls":[
-				{"id":"remove-empty-message","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/bar/empty\",\"depth\":1}"}}
-			]
-		}`),
-		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"remove-empty-message","content":"empty"}`),
 	}}
+	assistantBefore := marshalHistory(t, agent.messages[1:2])
 
 	result, err := clearAnalyzeHistory(agent, []string{"/foo//bar/./"})
 	if err != nil {
 		t.Fatalf("clear analyze history: %v", err)
 	}
-	if result != `{"removedAnalyzeCalls":2}` {
+	if result != `{"removedAnalyzeEntries":2}` {
 		t.Fatalf("result = %s", result)
 	}
 
-	callIDs, resultIDs, assistantContents := inspectHistory(t, agent.messages)
-	for _, removed := range []string{"remove-child", "remove-empty-message"} {
-		if slices.Contains(callIDs, removed) || slices.Contains(resultIDs, removed) {
-			t.Fatalf("history still contains removed ID %q", removed)
-		}
+	if len(agent.messages) != 5 {
+		t.Fatalf("history length = %d, want all 5 messages preserved", len(agent.messages))
 	}
-	for _, kept := range []string{"keep-target", "keep-prefix", "keep-unpaired", "keep-malformed", "keep-other"} {
+	if assistantAfter := marshalHistory(t, agent.messages[1:2]); assistantAfter != assistantBefore {
+		t.Fatal("assistant message changed while filtering tool responses")
+	}
+	callIDs, resultIDs, assistantContents := inspectHistory(t, agent.messages)
+	for _, kept := range []string{"mixed-csv", "non-csv", "keep-other"} {
 		if !slices.Contains(callIDs, kept) {
 			t.Errorf("history is missing kept call ID %q", kept)
+		}
+		if !slices.Contains(resultIDs, kept) {
+			t.Errorf("history is missing kept result ID %q", kept)
 		}
 	}
 	if !slices.Contains(assistantContents, "keep this summary") {
 		t.Fatalf("assistant contents = %#v", assistantContents)
+	}
+	filteredCSV := historyToolContent(t, agent.messages, "mixed-csv")
+	for _, kept := range []string{"/foo/bar,100,0", "/foo/bar2/child,30,0", "/other,10,0"} {
+		if !strings.Contains(filteredCSV, kept) {
+			t.Errorf("filtered CSV is missing %q: %q", kept, filteredCSV)
+		}
+	}
+	for _, removed := range []string{"/foo/bar/child,40,0", "/foo/bar/child/file.log,20,1"} {
+		if strings.Contains(filteredCSV, removed) {
+			t.Errorf("filtered CSV still contains %q: %q", removed, filteredCSV)
+		}
+	}
+	if content := historyToolContent(t, agent.messages, "non-csv"); content != "not csv" {
+		t.Fatalf("non-CSV response changed: %q", content)
 	}
 
 	before := marshalHistory(t, agent.messages)
@@ -236,7 +270,7 @@ func TestClearAnalyzeHistoryPreservesIntegrityAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("clear analyze history again: %v", err)
 	}
-	if result != `{"removedAnalyzeCalls":0}` {
+	if result != `{"removedAnalyzeEntries":0}` {
 		t.Fatalf("second result = %s", result)
 	}
 	if after := marshalHistory(t, agent.messages); after != before {
@@ -289,15 +323,13 @@ func inspectHistory(
 		switch role {
 		case "assistant":
 			assistantContents = append(assistantContents, decodeHistoryString(fields["content"]))
-			calls, err := decodeHistoryToolCalls(fields)
-			if err != nil {
+			var calls []struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(fields["tool_calls"], &calls); err != nil {
 				t.Fatalf("decode tool calls: %v", err)
 			}
-			for _, rawCall := range calls {
-				var call historyToolCall
-				if err := json.Unmarshal(rawCall, &call); err != nil {
-					t.Fatalf("decode tool call: %v", err)
-				}
+			for _, call := range calls {
 				callIDs = append(callIDs, call.ID)
 			}
 		case "tool":
@@ -305,4 +337,43 @@ func inspectHistory(
 		}
 	}
 	return callIDs, resultIDs, assistantContents
+}
+
+func historyToolContent(
+	t *testing.T,
+	messages []openai.ChatCompletionMessageParamUnion,
+	toolCallID string,
+) string {
+	t.Helper()
+	for _, message := range messages {
+		fields, role, err := decodeHistoryMessage(message)
+		if err != nil {
+			t.Fatalf("decode history: %v", err)
+		}
+		if role == "tool" && decodeHistoryString(fields["tool_call_id"]) == toolCallID {
+			return decodeHistoryString(fields["content"])
+		}
+	}
+	t.Fatalf("tool response %q not found", toolCallID)
+	return ""
+}
+
+func decodeHistoryMessage(
+	message openai.ChatCompletionMessageParamUnion,
+) (map[string]json.RawMessage, string, error) {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return nil, "", fmt.Errorf("encode analysis history message: %w", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, "", fmt.Errorf("decode analysis history message: %w", err)
+	}
+	return fields, decodeHistoryString(fields["role"]), nil
+}
+
+func decodeHistoryString(raw json.RawMessage) string {
+	var result string
+	_ = json.Unmarshal(raw, &result)
+	return result
 }

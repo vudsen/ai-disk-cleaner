@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -29,7 +31,7 @@ func (tool *clearAnalyzeHistoryTool) Name() string {
 }
 
 func (tool *clearAnalyzeHistoryTool) Description() string {
-	return "清除每个目标路径严格后代的历史 analyze_directory 调用及其配对结果，以压缩上下文；目标路径自身、祖先路径和无关路径的扫描历史仍会保留"
+	return "仅用于清除对话中的扫描历史，不会删除磁盘文件。paths 只能选择已经读取完后代扫描结果、已完成判断且后续不再引用的具体非根子目录；绝对禁止传入 / 根目录，也不要选择仍在分析的目录分支。工具直接过滤历史 tool response CSV 中属于目标严格后代的扫描行，目标路径自身仍会保留，不会修改 assistant 消息"
 }
 
 func (tool *clearAnalyzeHistoryTool) IsSupport(agent *Agent) bool {
@@ -53,7 +55,7 @@ func (tool *clearAnalyzeHistoryTool) ParameterSchema() map[string]any {
 		"properties": map[string]any{
 			"paths": map[string]any{
 				"type":        "array",
-				"description": "要压缩的文件树逻辑路径；每项必须以 / 开头、使用绝对路径",
+				"description": "要压缩扫描历史的具体非根子目录。仅选择已经读取、完成判断且后续不再使用的目录分支；禁止传入 / 根目录。每项必须以 / 开头并使用绝对路径",
 				"items": map[string]any{
 					"type":    "string",
 					"pattern": "^/[^\\\\]*$",
@@ -66,231 +68,170 @@ func (tool *clearAnalyzeHistoryTool) ParameterSchema() map[string]any {
 }
 
 type clearAnalyzeHistoryResult struct {
-	RemovedAnalyzeCalls int `json:"removedAnalyzeCalls"`
+	RemovedAnalyzeEntries int `json:"removedAnalyzeEntries"`
 }
 
-type historyToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"`
-	} `json:"function"`
+type messageGroup struct {
+	assistant     openai.ChatCompletionMessageParamUnion
+	toolResponses []openai.ChatCompletionMessageParamUnion
+}
+
+func splitMessageGroup(messages []openai.ChatCompletionMessageParamUnion) []messageGroup {
+	result := make([]messageGroup, 0)
+	var toolResponses []openai.ChatCompletionMessageParamUnion
+	var headAssistantMessage *openai.ChatCompletionMessageParamUnion = nil
+	for _, message := range messages {
+		if message.OfAssistant != nil {
+			if headAssistantMessage != nil {
+				result = append(result, messageGroup{
+					assistant:     *headAssistantMessage,
+					toolResponses: toolResponses,
+				})
+			}
+			headAssistantMessage = &message
+			toolResponses = make([]openai.ChatCompletionMessageParamUnion, len(headAssistantMessage.OfAssistant.ToolCalls))
+			continue
+		}
+		if message.OfTool != nil {
+			toolResponses = append(toolResponses, message)
+		}
+	}
+	return result
 }
 
 func clearAnalyzeHistory(agent *Agent, paths []string) (string, error) {
-	targets, err := normalizeAnalyzeHistoryTargets(paths)
-	if err != nil {
-		return "", err
-	}
-	if agent == nil {
-		return "", fmt.Errorf("agent is not available")
-	}
+	groups := splitMessageGroup(agent.messages)
+	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(agent.messages))
+	result = append(result, agent.messages[0])
+	result = append(result, agent.messages[1])
 
-	messages, removed, err := compactAnalyzeHistory(agent.messages, targets)
-	if err != nil {
-		return "", err
+	for _, group := range groups {
+		firstAnalyzeRespIndex := -1
+		analyzeToolLen := 0
+		toolCalls := group.assistant.OfAssistant.ToolCalls
+		for i, toolCall := range toolCalls {
+			if toolCall.OfFunction.Function.Name == analyzeDirectoryToolName && group.toolResponses[i].OfTool.Content.OfString.String() != analyzeDirectoryRefuseMessage {
+				analyzeToolLen++
+				if firstAnalyzeRespIndex < 0 {
+					firstAnalyzeRespIndex = i
+				}
+			}
+		}
+		if firstAnalyzeRespIndex < 0 {
+			result = append(result, group.assistant)
+			result = append(result, group.toolResponses...)
+			continue
+		}
+		if analyzeToolLen > 1 {
+			// do combination.
+			builder := strings.Builder{}
+			builder.WriteString("path totalSize type\n")
+			newCalls := make([]openai.ChatCompletionMessageToolCallUnionParam, 0, len(toolCalls)-analyzeToolLen+1)
+			newTools := make([]openai.ChatCompletionMessageParamUnion, 0, len(toolCalls)-analyzeToolLen+1)
+			for i, toolCall := range toolCalls {
+				function := toolCall.OfFunction.Function
+				if function.Name == analyzeDirectoryToolName {
+					tool := group.toolResponses[i].OfTool
+					content := tool.Content.OfString.String()
+					post := strings.Index(content, "\n")
+					builder.WriteString(content[post+1:])
+					if i == firstAnalyzeRespIndex {
+						newCalls = append(newCalls, toolCall)
+						newTools = append(newTools, openai.ChatCompletionMessageParamUnion{
+							OfTool: &openai.ChatCompletionToolMessageParam{
+								Content: openai.ChatCompletionToolMessageParamContentUnion{
+									OfString: openai.String(""),
+								},
+								ToolCallID: tool.ToolCallID,
+								Role:       tool.Role,
+							},
+						})
+					}
+					break
+				}
+				newCalls = append(newCalls, toolCall)
+				newTools = append(newTools, group.toolResponses[i])
+			}
+			newTools[firstAnalyzeRespIndex].OfTool.Content.OfString = openai.String(builder.String())
+			group.assistant.OfAssistant.ToolCalls = newCalls
+		}
+		// do clear
+		err := doClear(paths, group.toolResponses)
+		if err != nil {
+			return "", err
+		}
+
+		result = append(result, group.assistant)
+		result = append(result, group.toolResponses...)
 	}
-	result, err := json.Marshal(clearAnalyzeHistoryResult{RemovedAnalyzeCalls: removed})
-	if err != nil {
-		return "", fmt.Errorf("encode clear analyze history result: %w", err)
-	}
-	agent.messages = messages
-	return string(result), nil
+	agent.messages = result
+	return "Ok", nil
+}
+
+// / 替换分析结果
+func doClear(paths []string, toolMessages []openai.ChatCompletionMessageParamUnion) error {
+
 }
 
 func compactAnalyzeHistory(
 	messages []openai.ChatCompletionMessageParamUnion,
 	targets []string,
 ) ([]openai.ChatCompletionMessageParamUnion, int, error) {
-	callCounts := make(map[string]int)
-	candidateCounts := make(map[string]int)
-	resultCounts := make(map[string]int)
-
-	for _, message := range messages {
-		fields, role, err := decodeHistoryMessage(message)
-		if err != nil {
-			return nil, 0, err
-		}
-		switch role {
-		case "assistant":
-			calls, err := decodeHistoryToolCalls(fields)
-			if err != nil {
-				return nil, 0, err
-			}
-			for _, rawCall := range calls {
-				var call historyToolCall
-				if err := json.Unmarshal(rawCall, &call); err != nil || call.ID == "" {
-					continue
-				}
-				callCounts[call.ID]++
-				if isAnalyzeHistoryRemovalCandidate(call, targets) {
-					candidateCounts[call.ID]++
-				}
-			}
-		case "tool":
-			if toolCallID := decodeHistoryString(fields["tool_call_id"]); toolCallID != "" {
-				resultCounts[toolCallID]++
-			}
-		}
-	}
-
-	removable := make(map[string]struct{})
-	for id, count := range candidateCounts {
-		if count == 1 && callCounts[id] == 1 && resultCounts[id] == 1 {
-			removable[id] = struct{}{}
-		}
-	}
-	if len(removable) == 0 {
-		return append([]openai.ChatCompletionMessageParamUnion(nil), messages...), 0, nil
-	}
-
 	result := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	removed := 0
 	for _, message := range messages {
-		fields, role, err := decodeHistoryMessage(message)
-		if err != nil {
-			return nil, 0, err
-		}
-		switch role {
-		case "assistant":
-			calls, err := decodeHistoryToolCalls(fields)
-			if err != nil {
-				return nil, 0, err
-			}
-			kept := make([]json.RawMessage, 0, len(calls))
-			changed := false
-			for _, rawCall := range calls {
-				var call historyToolCall
-				if err := json.Unmarshal(rawCall, &call); err == nil {
-					if _, ok := removable[call.ID]; ok {
-						changed = true
-						continue
-					}
-				}
-				kept = append(kept, rawCall)
-			}
-			if !changed {
-				result = append(result, message)
-				continue
-			}
-			if len(kept) == 0 {
-				delete(fields, "tool_calls")
-			} else {
-				encodedCalls, err := json.Marshal(kept)
-				if err != nil {
-					return nil, 0, fmt.Errorf("encode assistant tool calls: %w", err)
-				}
-				fields["tool_calls"] = encodedCalls
-			}
-			if len(kept) == 0 && !assistantHistoryMessageHasContent(fields) {
-				continue
-			}
-			rebuilt, err := encodeHistoryMessage(fields)
-			if err != nil {
-				return nil, 0, err
-			}
-			result = append(result, rebuilt)
-		case "tool":
-			toolCallID := decodeHistoryString(fields["tool_call_id"])
-			if _, ok := removable[toolCallID]; !ok {
-				result = append(result, message)
-			}
-		default:
+		toolResponse := message.OfTool
+		if toolResponse == nil || !toolResponse.Content.OfString.Valid() {
 			result = append(result, message)
-		}
-	}
-	return result, len(removable), nil
-}
-
-func isAnalyzeHistoryRemovalCandidate(call historyToolCall, targets []string) bool {
-	if call.Function.Name != analyzeDirectoryToolName {
-		return false
-	}
-	var parameters analyzeDirectoryParameters
-	if err := json.Unmarshal([]byte(call.Function.Arguments), &parameters); err != nil || parameters.Depth < 1 {
-		return false
-	}
-	candidate, err := normalizeAnalyzeHistoryPath(parameters.Path)
-	if err != nil {
-		return false
-	}
-	return isStrictAnalyzeHistoryDescendant(candidate, targets)
-}
-
-func decodeHistoryMessage(
-	message openai.ChatCompletionMessageParamUnion,
-) (map[string]json.RawMessage, string, error) {
-	data, err := json.Marshal(message)
-	if err != nil {
-		return nil, "", fmt.Errorf("encode analysis history message: %w", err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, "", fmt.Errorf("decode analysis history message: %w", err)
-	}
-	return fields, decodeHistoryString(fields["role"]), nil
-}
-
-func encodeHistoryMessage(fields map[string]json.RawMessage) (openai.ChatCompletionMessageParamUnion, error) {
-	data, err := json.Marshal(fields)
-	if err != nil {
-		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("encode compacted history message: %w", err)
-	}
-	var result openai.ChatCompletionMessageParamUnion
-	if err := json.Unmarshal(data, &result); err != nil {
-		return openai.ChatCompletionMessageParamUnion{}, fmt.Errorf("decode compacted history message: %w", err)
-	}
-	return result, nil
-}
-
-func decodeHistoryToolCalls(fields map[string]json.RawMessage) ([]json.RawMessage, error) {
-	raw, ok := fields["tool_calls"]
-	if !ok || string(raw) == "null" {
-		return nil, nil
-	}
-	var result []json.RawMessage
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("decode assistant tool calls: %w", err)
-	}
-	return result, nil
-}
-
-func decodeHistoryString(raw json.RawMessage) string {
-	var result string
-	_ = json.Unmarshal(raw, &result)
-	return result
-}
-
-func assistantHistoryMessageHasContent(fields map[string]json.RawMessage) bool {
-	for name, value := range fields {
-		switch name {
-		case "role", "tool_calls", "name":
 			continue
 		}
-		if historyJSONHasContent(value) {
-			return true
+
+		filtered, count, ok := filterAnalyzeDirectoryResponseCSV(toolResponse.Content.OfString.Value, targets)
+		if !ok || count == 0 {
+			result = append(result, message)
+			continue
 		}
+		updatedResponse := *toolResponse
+		updatedResponse.Content.OfString.Value = filtered
+		message.OfTool = &updatedResponse
+		result = append(result, message)
+		removed += count
 	}
-	return false
+	return result, removed, nil
 }
 
-func historyJSONHasContent(raw json.RawMessage) bool {
-	var value any
-	if len(raw) == 0 || json.Unmarshal(raw, &value) != nil {
-		return false
+func filterAnalyzeDirectoryResponseCSV(content string, targets []string) (string, int, bool) {
+	reader := csv.NewReader(strings.NewReader(content))
+	records, err := reader.ReadAll()
+	if err != nil || len(records) == 0 {
+		return content, 0, false
 	}
-	switch value := value.(type) {
-	case nil:
-		return false
-	case string:
-		return value != ""
-	case []any:
-		return len(value) > 0
-	case map[string]any:
-		return len(value) > 0
-	default:
-		return true
+	header := records[0]
+	if len(header) != 3 || header[0] != "path" || header[1] != "totalSize" || header[2] != "type" {
+		return content, 0, false
 	}
+
+	kept := make([][]string, 0, len(records))
+	kept = append(kept, header)
+	removed := 0
+	for _, record := range records[1:] {
+		candidate, err := normalizeAnalyzeHistoryPath(record[0])
+		if err == nil && isStrictAnalyzeHistoryDescendant(candidate, targets) {
+			removed++
+			continue
+		}
+		kept = append(kept, record)
+	}
+	if removed == 0 {
+		return content, 0, true
+	}
+
+	var buffer bytes.Buffer
+	writer := csv.NewWriter(&buffer)
+	if err := writer.WriteAll(kept); err != nil {
+		return content, 0, false
+	}
+	return buffer.String(), removed, true
 }
 
 func normalizeAnalyzeHistoryTargets(paths []string) ([]string, error) {

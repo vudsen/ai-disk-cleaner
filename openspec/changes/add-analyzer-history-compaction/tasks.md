@@ -7,19 +7,22 @@
 ## 2. 历史压缩核心逻辑
 
 - [x] 2.1 实现逻辑路径的全量预验证、规范化和严格后代匹配，覆盖根路径、尾斜杠、点段、重复/重叠目标及相似前缀
-- [x] 2.2 实现 analyze_directory 调用参数解析和按 tool-call ID 配对的历史筛选，仅删除可安全识别的完整调用/结果对
-- [x] 2.3 重建混合 assistant 消息时保留文本、无关 tool calls 及其结果，并删除清空后不再含有效内容的消息
-- [x] 2.4 返回包含 removed scan-call count 的紧凑 JSON 摘要，并保证重复调用幂等
+- [x] 2.2 实现 tool response CSV 解析与严格后代行过滤，不再使用 assistant tool call 参数作为匹配来源
+- [x] 2.3 重建过滤后的 tool response content，同时保留 assistant 消息、tool response 消息及 tool-call ID
+- [x] 2.4 返回包含 removed CSV entry count 的紧凑 JSON 摘要，并保证重复调用幂等
 
 ## 3. 工具注册与契约
 
 - [x] 3.1 实现 clear_analyze_history 工具及严格 JSON Schema，要求 paths 字符串数组且声明逻辑路径格式
 - [x] 3.2 将 clear_analyze_history 注册到 toolsManager，并完善工具描述以强调仅清除目标路径严格后代的扫描历史
 - [x] 3.3 为 tool 增加 IsSupport(*Agent)，并按 Low/Medium/High 状态在每轮 completion 前动态过滤工具列表
+- [x] 3.4 收紧 clear_analyze_history 的工具与运行时提示，禁止模型选择 / 并引导其只清理已读取且不再使用的具体子目录
+- [x] 3.5 修正 analyze_directory 深度语义，使 depth=1 返回目标节点及直接子项，并同步工具说明和回归测试
+- [x] 3.6 将历史压缩改为直接过滤 tool response CSV 行，并移除对 assistant tool call 参数的依赖
 
 ## 4. 测试与验证
 
 - [ ] 4.1 增加 Agent 消息所有权和现有工具迁移测试，确认最终分析结果仍来自 Agent 状态
 - [ ] 4.2 增加目标保留、后代删除、相似前缀、根路径、多路径、规范化及非法输入原子性的单元测试
-- [ ] 4.3 增加 tool-call/result 成对删除、混合 assistant 消息保留、畸形或未配对记录保留及幂等性测试
+- [x] 4.3 增加 tool response CSV 行过滤、assistant 消息保持不变、非 CSV 响应保留及幂等性测试
 - [ ] 4.4 运行 analyzer 测试、Go 全量测试和项目构建，并修复所有回归

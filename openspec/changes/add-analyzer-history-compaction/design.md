@@ -10,7 +10,7 @@
 
 - 让 LLM 通过 clear_analyze_history(paths) 主动删除指定路径严格后代的历史扫描上下文。
 - 始终保留目标路径自身的扫描结果，并保留祖先、无关路径以及前缀相似但不属于后代的路径。
-- 删除一个扫描记录时，同时删除对应的 analyze_directory tool call 和由其 tool-call ID 关联的 tool result，保持消息序列有效。
+- 直接过滤 tool response CSV 中匹配的扫描行，同时保留 assistant tool call 和 tool response 消息，保持消息序列有效。
 - 由 Agent 统一持有运行中的消息、文件树和分析结果，并让所有工具直接操作该实例。
 - 对多路径、重复/重叠路径及异常参数提供确定且可测试的行为。
 
@@ -32,18 +32,16 @@ tool.invoke 与 toolsManager.Invoke 接收 *Agent。现有工具从 agent.tree �
 
 选择此方案是因为历史压缩本身属于一次 Agent 状态变更；若仅给特定工具额外传入消息指针，会让工具接口分叉并增加切片被替换后调用方仍持有旧值的风险。
 
-### 2. 通过 tool-call ID 成对识别和删除扫描记录
+### 2. 直接扫描并过滤 tool response CSV
 
-压缩逻辑遍历历史 assistant 消息中的 tool calls，只检查函数名为 analyze_directory 的调用，并解析其参数中的 path。满足删除条件的调用 ID 组成集合，然后：
+压缩逻辑只检查历史中的 tool response。若响应内容能解析为 `analyze_directory` 的 `path,totalSize,type` CSV，则逐行规范化 path 并执行严格后代匹配：
 
-1. 从 assistant 消息中移除这些特定 tool call；
-2. 从历史中移除具有对应 tool-call ID 的 tool result；
-3. assistant 消息若仍含文本或其他 tool calls 则保留；若清除后为空则删除；
-4. 不完整、参数无法解析或 ID 无法配对的记录保持不变，避免误删。
+1. 匹配目标严格后代的 CSV 行从响应内容中移除；
+2. 目标路径自身、祖先、无关路径和相似前缀行保持不变；
+3. assistant 消息完全不解析、不修改，tool response 消息及其 tool-call ID 也保持不变；
+4. 非 CSV、表头不匹配或无法安全解析的响应保持原样。
 
-当前正在执行的 clear_analyze_history 调用不属于 analyze_directory，因此会保留；它的结果在 Invoke 返回后照常追加。该设计也能保留同一 assistant 消息中的其他工具调用。
-
-选择调用参数而非解析 CSV 结果，是因为请求路径是结构化且稳定的来源，tool-call ID 则是请求与结果的明确关联键。
+选择直接过滤 CSV 是因为真正消耗上下文的是响应中的扫描明细。保留消息结构并只删除不再需要的行，可以避免解析或重建 assistant tool calls，也不会产生缺失 tool response 的无效消息序列。
 
 ### 3. 使用规范化逻辑路径执行严格后代匹配
 
@@ -55,7 +53,7 @@ tool.invoke 与 toolsManager.Invoke 接收 *Agent。现有工具从 agent.tree �
 
 ### 4. 工具结果返回可观察的压缩摘要
 
-成功时返回 JSON 摘要，至少包含被移除的扫描调用数量，便于 LLM 判断压缩是否生效；没有匹配项时成功返回零。错误沿用 manager 的现有错误传递路径，由运行循环转成 tool result。
+成功时返回 JSON 摘要，至少包含被移除的 CSV 扫描行数量，便于 LLM 判断压缩是否生效；没有匹配项时成功返回零。错误沿用 manager 的现有错误传递路径，由运行循环转成 tool result。
 
 相较始终返回 true，计数摘要不会重新引入大量上下文，却能减少 LLM 为确认效果而重复调用。
 
@@ -65,10 +63,18 @@ tool.invoke 与 toolsManager.Invoke 接收 *Agent。现有工具从 agent.tree �
 
 `analyze_directory` 在 High 状态返回不支持，阻止模型继续扩大扫描上下文；`clear_analyze_history` 在 Low 状态返回不支持，避免上下文尚小时增加无意义操作。Medium 状态同时提供二者，其余结果类工具始终提供。过滤只控制模型可见的工具定义，不在 Invoke 阶段二次拒绝，以免一次 completion 返回后状态变化导致已经获准的调用被拒绝。
 
+### 6. 提示模型执行窄范围历史压缩
+
+`clear_analyze_history` 的工具描述、参数说明以及 Medium/High 运行时提示必须一致强调：只选择已读取、已完成判断且后续不再使用的具体非根子目录，禁止传入 `/`，并避免清除仍在分析或后续推理中需要引用的目录分支。底层路径语义继续支持根路径，以保持内部能力通用；本决策只约束 LLM 的正常工具选择。
+
+### 7. analyze_directory 深度表示展开的子层数
+
+`analyze_directory` 始终返回请求的目标节点，并将 `depth` 解释为需要展开的后代层数。因此 `depth=1` 返回目标节点及其直接子项，`depth=2` 再包含孙级节点。这样模型首次以 `path="/"`、`depth=1` 探索文件树时即可获得真实的下一层路径，不需要猜测根目录的子项。
+
 ## Risks / Trade-offs
 
-- [SDK 的 message union 修改较繁琐，错误重建可能丢失字段] → 用小型纯函数完成筛选，并为含文本、混合 tool calls 和配对 result 的消息添加单元测试；重建时保留未修改字段。
-- [历史中存在畸形或未配对 tool call] → 仅删除能够按调用 ID 安全关联的完整扫描记录，无法确定的消息保持原样。
+- [CSV 响应格式异常导致误删] → 仅处理表头严格匹配 `path,totalSize,type` 且能完整解析的响应，其他响应保持原样。
+- [重写 tool response 时破坏消息配对] → 不删除任何消息或 tool-call ID，只替换匹配响应的 content 字段。
 - [路径规范化与文件树语义不一致导致误匹配] → 复用 modelscanner.NormalizeTreePath 或等价 POSIX 逻辑，并覆盖根路径、尾斜杠、重叠路径和相似前缀测试。
 - [清除历史后累计 token 告警仍可能升高] → 明确累计用量是费用/预算统计而非当前上下文长度，本变更不回退计数。
 - [工具可删除模型之后可能想引用的信息] → 删除动作只能由 LLM 显式调用，且目标节点自身作为导航锚点保留。
@@ -82,4 +88,4 @@ tool.invoke 与 toolsManager.Invoke 接收 *Agent。现有工具从 agent.tree �
 
 ## Open Questions
 
-无。实现以“仅清除严格后代的完整 analyze_directory 调用/结果对”为固定语义。
+无。实现以“仅清除 tool response CSV 中严格后代路径的扫描行，不解析 assistant 消息”为固定语义。
