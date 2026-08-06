@@ -1,10 +1,15 @@
 package analyzer
 
 import (
+	"bytes"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"path"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
@@ -41,7 +46,7 @@ type diskCleanerContext struct {
 type tool interface {
 	Name() string
 	Description() string
-	invoke(ctx *diskCleanerContext, parameter string) (any, error)
+	invoke(ctx *diskCleanerContext, parameter string) (string, error)
 	ParameterSchema() map[string]any
 }
 
@@ -58,7 +63,7 @@ func newManager() *toolsManager {
 	tools := []tool{
 		newAddTrashFileTool(),
 		newAddUsageTool(),
-		newGetDirectoryUsageTool(),
+		newAnalyzeDirectoryTool(),
 	}
 	toolMap := make(map[string]tool)
 	for _, tool := range tools {
@@ -72,15 +77,7 @@ func (manager *toolsManager) Invoke(toolName string, parameter string, ctx *disk
 	if !ok {
 		return "", fmt.Errorf("tool '%s' not found", toolName)
 	}
-	invoke, err := tool.invoke(ctx, parameter)
-	if err != nil {
-		return "", err
-	}
-	marshal, err := json.Marshal(invoke)
-	if err != nil {
-		return "", err
-	}
-	return string(marshal), nil
+	return tool.invoke(ctx, parameter)
 }
 
 type addTopUsagesTool struct {
@@ -122,14 +119,14 @@ func (tool *addTopUsagesTool) Description() string {
 	return "设置当前磁盘占用最高的地方，每次调用都将覆盖之前的结果"
 }
 
-func (tool *addTopUsagesTool) invoke(ctx *diskCleanerContext, parameter string) (any, error) {
+func (tool *addTopUsagesTool) invoke(ctx *diskCleanerContext, parameter string) (string, error) {
 	var v addTopUsagesParameters
 	err := json.Unmarshal([]byte(parameter), &v)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	ctx.TopUsages = v.Usages
-	return true, nil
+	return "true", nil
 }
 
 type addTrashFileTool struct {
@@ -171,13 +168,13 @@ func (tool *addTrashFileTool) Description() string {
 	return "添加建议删除、移动、跳过或需要用户进一步确认的文件和目录；每项必须提供说明标题、建议或原因、路径和风险等级，多次调用会合并结果，并移除已被父候选路径包含的子项"
 }
 
-func (tool *addTrashFileTool) invoke(ctx *diskCleanerContext, parameter string) (any, error) {
+func (tool *addTrashFileTool) invoke(ctx *diskCleanerContext, parameter string) (string, error) {
 	var v addTrashFileParameters
 	if err := json.Unmarshal([]byte(parameter), &v); err != nil {
-		return nil, err
+		return "", err
 	}
 	ctx.TrashFiles = removeNestedTrashFiles(append(ctx.TrashFiles, v.Files...))
-	return true, nil
+	return "true", nil
 }
 
 func removeNestedTrashFiles(files []cleaningrecord.TrashFile) []cleaningrecord.TrashFile {
@@ -236,51 +233,139 @@ func normalizePath(path string) string {
 	return path
 }
 
-type getDirectoryUsageTool struct{}
+const maxDirectoryEntries = 200
 
-func newGetDirectoryUsageTool() *getDirectoryUsageTool {
-	return &getDirectoryUsageTool{}
+type analyzeDirectoryTool struct{}
+
+type analyzeDirectoryParameters struct {
+	Path  string `json:"path"`
+	Depth int    `json:"depth"`
 }
 
-func (g *getDirectoryUsageTool) Name() string {
-	return "get_directory_usage"
+type directoryUsageEntry struct {
+	path      string
+	totalSize int64
+	typeID    int
 }
 
-func (g *getDirectoryUsageTool) Description() string {
-	return "获取指定目录下的磁盘占用，使用该方法可以读取沙盒环境下的文件占用信息. 一个目录下最多返回 200 个子文件，超过的部分将被截断"
+func newAnalyzeDirectoryTool() *analyzeDirectoryTool {
+	return &analyzeDirectoryTool{}
 }
 
-func (g *getDirectoryUsageTool) invoke(ctx *diskCleanerContext, parameter string) (any, error) {
-	var args map[string]any
-	err := json.Unmarshal([]byte(parameter), &args)
+func (g *analyzeDirectoryTool) Name() string {
+	return "analyze_directory"
+}
+
+func (g *analyzeDirectoryTool) Description() string {
+	return "按指定深度分析文件树中的目录或文件，以 CSV 返回路径、总大小和类型；每个目录最多展示占用最大的 200 个直接子项"
+}
+
+func (g *analyzeDirectoryTool) invoke(ctx *diskCleanerContext, parameter string) (string, error) {
+	var args analyzeDirectoryParameters
+	if err := json.Unmarshal([]byte(parameter), &args); err != nil {
+		return "", fmt.Errorf("decode analyze_directory parameters: %w", err)
+	}
+	if !strings.HasPrefix(args.Path, "/") {
+		return "", fmt.Errorf("path must start with '/': %q", args.Path)
+	}
+	if strings.Contains(args.Path, `\`) {
+		return "", fmt.Errorf("path must use '/' as its separator: %q", args.Path)
+	}
+	if args.Depth < 1 {
+		return "", fmt.Errorf("depth must be at least 1")
+	}
+	if ctx == nil || ctx.FileTree == nil {
+		return "", fmt.Errorf("file tree is not available")
+	}
+
+	treePath := modelscanner.NormalizeTreePath(args.Path)
+	node, err := ctx.FileTree.FindNode(treePath)
 	if err != nil {
-		panic(err)
+		return "", err
 	}
-	treePath := args["path"].(string)
-	files, err := ctx.FileTree.Get(treePath)
-	if err != nil {
-		return nil, err
+
+	entries := make([]directoryUsageEntry, 0)
+	traversalDepth := args.Depth
+	if traversalDepth > 1 {
+		// depth=1 only returns the requested node. For larger values, depth is
+		// the number of descendant levels to inspect, matching the tool's
+		// depth=2 example (/foo and /foo/xxx.exe are both included from /).
+		traversalDepth++
 	}
-	if len(files) > 200 {
-		files = files[:200]
+	collectDirectoryUsage(&entries, node, treePath, traversalDepth)
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].totalSize != entries[j].totalSize {
+			return entries[i].totalSize > entries[j].totalSize
+		}
+		return entries[i].path < entries[j].path
+	})
+
+	var buffer bytes.Buffer
+	writer := csv.NewWriter(&buffer)
+	if err := writer.Write([]string{"path", "totalSize", "type"}); err != nil {
+		return "", err
 	}
-	result, err := json.Marshal(files)
-	if err != nil {
-		panic(err)
+	for _, entry := range entries {
+		if err := writer.Write([]string{
+			entry.path,
+			strconv.FormatInt(entry.totalSize, 10),
+			strconv.Itoa(entry.typeID),
+		}); err != nil {
+			return "", err
+		}
 	}
-	return string(result), nil
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+	return buffer.String(), nil
 }
 
-func (g *getDirectoryUsageTool) ParameterSchema() map[string]any {
+func collectDirectoryUsage(entries *[]directoryUsageEntry, node *modelscanner.FileNode, treePath string, depth int) {
+	typeID := 1
+	if node.IsDir() {
+		typeID = 0
+	}
+	*entries = append(*entries, directoryUsageEntry{
+		path:      treePath,
+		totalSize: node.DiskSize,
+		typeID:    typeID,
+	})
+	if depth == 1 || !node.IsDir() {
+		return
+	}
+
+	children := append([]*modelscanner.FileNode(nil), node.Children...)
+	sort.Slice(children, func(i, j int) bool {
+		if children[i].DiskSize != children[j].DiskSize {
+			return children[i].DiskSize > children[j].DiskSize
+		}
+		return children[i].Name < children[j].Name
+	})
+	if len(children) > maxDirectoryEntries {
+		children = children[:maxDirectoryEntries]
+	}
+	for _, child := range children {
+		collectDirectoryUsage(entries, child, path.Join(treePath, child.Name), depth-1)
+	}
+}
+
+func (g *analyzeDirectoryTool) ParameterSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"path": map[string]string{
+			"path": map[string]any{
 				"type":        "string",
-				"description": "文件树中的相对或绝对路径，例如 `pkg`、`./pkg` 或 `/pkg`；使用 `/` 访问根路径",
+				"description": "文件树路径，必须以 / 开头并使用 / 作为路径分隔符",
+				"pattern":     "^/",
+			},
+			"depth": map[string]any{
+				"type":        "integer",
+				"description": "搜索深度，从 1 开始；1 表示只显示 path 对应的目录或文件",
+				"minimum":     1,
 			},
 		},
-		"required":             []string{"path"},
+		"required":             []string{"path", "depth"},
 		"additionalProperties": false,
 	}
 }

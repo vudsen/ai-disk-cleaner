@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 
@@ -112,11 +114,11 @@ func newOpenAIClient(config llmConfig) openai.Client {
 	return openai.NewClient(
 		option.WithAPIKey(config.secret),
 		option.WithBaseURL(config.baseURL),
-		//option.WithDebugLog(log.New(
-		//	os.Stdout,
-		//	"[openai] ",
-		//	log.LstdFlags,
-		//)),
+		option.WithDebugLog(log.New(
+			os.Stdout,
+			"[openai] ",
+			log.LstdFlags,
+		)),
 		option.WithHTTPClient(client),
 	)
 }
