@@ -70,9 +70,6 @@ func (analyzer *Service) Analyze(
 			Model:     config.model,
 			Tools:     llmTools,
 			MaxTokens: openai.Int(config.maxTokens),
-			StreamOptions: openai.ChatCompletionStreamOptionsParam{
-				IncludeUsage: openai.Bool(true),
-			},
 		}
 		extraFields := make(map[string]any, len(config.extraBody)+1)
 		for key, value := range config.extraBody {
@@ -82,39 +79,21 @@ func (analyzer *Service) Analyze(
 			params.SetExtraFields(extraFields)
 		}
 
-		stream := client.Chat.Completions.NewStreaming(
-			ctx,
-			params,
-		)
-		accumulator := openai.ChatCompletionAccumulator{}
-		for stream.Next() {
-			chunk := stream.Current()
-			if !accumulator.AddChunk(chunk) {
-				_ = stream.Close()
-				return nil, errors.New("analyze disk: could not accumulate LLM stream")
-			}
-			if len(chunk.Choices) > 0 {
-				delta := chunk.Choices[0].Delta.Content
-				if delta != "" {
-					output.WriteString(delta)
-					onDelta(delta)
-				}
-			}
-		}
-		streamErr := stream.Err()
-		_ = stream.Close()
-		if streamErr != nil {
-			return nil, fmt.Errorf("analyze disk stream: %w", streamErr)
+		completion, err := client.Chat.Completions.New(ctx, params)
+		if err != nil {
+			return nil, fmt.Errorf("analyze disk: %w", err)
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if len(accumulator.Choices) == 0 {
+		if len(completion.Choices) == 0 {
 			return nil, errors.New("analyze disk: LLM returned no choices")
 		}
 
-		tokenUsage += accumulator.Usage.CompletionTokens
-		message := accumulator.Choices[0].Message
+		tokenUsage += completion.Usage.CompletionTokens + completion.Usage.PromptTokens
+		message := completion.Choices[0].Message
+		output.WriteString(message.Content)
+		onDelta(message.Content)
 		if len(message.ToolCalls) == 0 {
 			break
 		}
