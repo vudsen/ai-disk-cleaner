@@ -30,13 +30,13 @@ type llmConfig struct {
 	extraBody map[string]any
 }
 
-func (analyzer *Service) loadLLMConfig(ctx context.Context) (llmConfig, error) {
+func (analyzer *Service) loadLLMConfig(ctx context.Context) (*llmConfig, error) {
 	if analyzer.settings == nil {
-		return llmConfig{}, errors.New("load LLM configuration: setting store is nil")
+		return nil, errors.New("load LLM configuration: setting store is nil")
 	}
 	settings, err := analyzer.settings.ListSettings(ctx)
 	if err != nil {
-		return llmConfig{}, fmt.Errorf("load LLM configuration: %w", err)
+		return nil, fmt.Errorf("load LLM configuration: %w", err)
 	}
 	values := make(map[string]string, len(settings))
 	for _, setting := range settings {
@@ -49,25 +49,25 @@ func (analyzer *Service) loadLLMConfig(ctx context.Context) (llmConfig, error) {
 		model:   strings.TrimSpace(values["llm.model"]),
 	}
 	if config.secret == "" {
-		return llmConfig{}, errors.New("load LLM configuration: llm.secret is empty")
+		return nil, errors.New("load LLM configuration: llm.secret is empty")
 	}
 	if config.baseURL == "" {
-		return llmConfig{}, errors.New("load LLM configuration: llm.url is empty")
+		return nil, errors.New("load LLM configuration: llm.url is empty")
 	}
 	if config.model == "" {
-		return llmConfig{}, errors.New("load LLM configuration: llm.model is empty")
+		return nil, errors.New("load LLM configuration: llm.model is empty")
 	}
 	config.maxTokens, err = strconv.ParseInt(strings.TrimSpace(values["llm.max-token"]), 10, 64)
 	if err != nil || config.maxTokens <= 0 {
-		return llmConfig{}, errors.New("load LLM configuration: llm.max-token must be a positive integer")
+		return nil, errors.New("load LLM configuration: llm.max-token must be a positive integer")
 	}
 	extraBody := strings.TrimSpace(values["llm.extra-body"])
 	if extraBody != "" {
 		if err := json.Unmarshal([]byte(extraBody), &config.extraBody); err != nil || config.extraBody == nil {
-			return llmConfig{}, errors.New("load LLM configuration: llm.extra-body must be a JSON object")
+			return nil, errors.New("load LLM configuration: llm.extra-body must be a JSON object")
 		}
 	}
-	return config, nil
+	return &config, nil
 }
 
 type debugTransport struct {
@@ -105,7 +105,7 @@ func (t debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	return resp, nil
 }
-func newOpenAIClient(config llmConfig) openai.Client {
+func newOpenAIClient(config *llmConfig) openai.Client {
 	client := &http.Client{
 		Transport: debugTransport{
 			rt: http.DefaultTransport,
