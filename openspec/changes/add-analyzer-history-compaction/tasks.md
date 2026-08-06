@@ -1,8 +1,8 @@
 ## 1. Agent 状态与工具接口迁移
 
-- [ ] 1.1 在 Agent 中增加并初始化消息历史字段，使 run 的 completion 请求、assistant 消息和 tool result 全部直接读写该字段
-- [ ] 1.2 将 tool.invoke 和 toolsManager.Invoke 的上下文参数统一改为 *Agent，并更新所有调用点和测试替身
-- [ ] 1.3 将现有工具迁移为从 Agent 读取文件树并直接更新 TrashFiles、TopUsages，移除 diskCleanerContext 等重复状态
+- [x] 1.1 在 Agent 中增加并初始化消息历史字段，使 run 的 completion 请求、assistant 消息和 tool result 全部直接读写该字段
+- [x] 1.2 将 tool.invoke 和 toolsManager.Invoke 的上下文参数统一改为 *Agent，并更新所有调用点和测试替身
+- [x] 1.3 将现有工具迁移为从 Agent 读取文件树并直接更新 TrashFiles、TopUsages，移除 diskCleanerContext 等重复状态
 
 ## 2. 历史压缩核心逻辑
 

@@ -29,7 +29,7 @@ type Agent struct {
 	language         string
 	state            agentContextState
 	totalTokens      int64
-	statistics       *diskCleanerContext
+	messages         []openai.ChatCompletionMessageParamUnion
 	TrashFiles       []cleaningrecord.TrashFile
 	TopUsages        []cleaningrecord.DiskUsage
 }
@@ -57,8 +57,12 @@ func newAgent(
 		language:         language,
 		state:            agentContextStateLow,
 		totalTokens:      0,
-		TrashFiles:       make([]cleaningrecord.TrashFile, 0),
-		TopUsages:        make([]cleaningrecord.DiskUsage, 0),
+		messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(baseSystemPrompt),
+			openai.UserMessage(i18n.AnalyzerUserPrompt(language)),
+		},
+		TrashFiles: make([]cleaningrecord.TrashFile, 0),
+		TopUsages:  make([]cleaningrecord.DiskUsage, 0),
 	}, nil
 }
 
@@ -102,12 +106,7 @@ func (agent *Agent) buildSystemPrompt() openai.ChatCompletionMessageParamUnion {
 func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 	client := newOpenAIClient(agent.config)
 
-	messages := []openai.ChatCompletionMessageParamUnion{
-		openai.SystemMessage(agent.baseSystemPrompt),
-		openai.UserMessage(i18n.AnalyzerUserPrompt(agent.language)),
-	}
 	manager := newManager()
-	diskContext := newDiskCleanerContext(agent.tree)
 	llmTools := buildTools(manager)
 
 	var output strings.Builder
@@ -117,7 +116,7 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		}
 
 		params := openai.ChatCompletionNewParams{
-			Messages:  messages,
+			Messages:  agent.messages,
 			Model:     agent.config.model,
 			Tools:     llmTools,
 			MaxTokens: openai.Int(50000),
@@ -131,7 +130,7 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 			params.SetExtraFields(extraFields)
 		}
 
-		messages[0] = agent.buildSystemPrompt()
+		agent.messages[0] = agent.buildSystemPrompt()
 		err := agent.beforeCompletions()
 		if err != nil {
 			return nil, err
@@ -157,24 +156,24 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		if len(message.ToolCalls) == 0 {
 			break
 		}
-		messages = append(messages, message.ToParam())
+		agent.messages = append(agent.messages, message.ToParam())
 		for _, item := range message.ToolCalls {
 			function := item.Function
 			result, err := manager.Invoke(
 				function.Name,
 				function.Arguments,
-				diskContext,
+				agent,
 			)
 			if err != nil {
 				result = err.Error()
 			}
-			messages = append(messages, openai.ToolMessage(result, item.ID))
+			agent.messages = append(agent.messages, openai.ToolMessage(result, item.ID))
 		}
 	}
 
 	return &cleaningrecord.AnalysisResult{
-		TrashFiles: diskContext.TrashFiles,
-		TopUsages:  diskContext.TopUsages,
+		TrashFiles: agent.TrashFiles,
+		TopUsages:  agent.TopUsages,
 		LLMOutput:  output.String(),
 		TokenUsage: agent.totalTokens,
 	}, nil

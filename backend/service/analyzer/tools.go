@@ -37,21 +37,11 @@ func buildTools(manager *toolsManager) []openai.ChatCompletionToolUnionParam {
 	return result
 }
 
-type diskCleanerContext struct {
-	TrashFiles []cleaningrecord.TrashFile
-	TopUsages  []cleaningrecord.DiskUsage
-	FileTree   *modelscanner.FileTree `json:"-"`
-}
-
 type tool interface {
 	Name() string
 	Description() string
-	invoke(ctx *diskCleanerContext, parameter string) (string, error)
+	invoke(agent *Agent, parameter string) (string, error)
 	ParameterSchema() map[string]any
-}
-
-func newDiskCleanerContext(fileTree *modelscanner.FileTree) *diskCleanerContext {
-	return &diskCleanerContext{FileTree: fileTree}
 }
 
 type toolsManager struct {
@@ -72,12 +62,12 @@ func newManager() *toolsManager {
 	return &toolsManager{toolMap: toolMap, tools: tools}
 }
 
-func (manager *toolsManager) Invoke(toolName string, parameter string, ctx *diskCleanerContext) (string, error) {
+func (manager *toolsManager) Invoke(toolName string, parameter string, agent *Agent) (string, error) {
 	tool, ok := manager.toolMap[toolName]
 	if !ok {
 		return "", fmt.Errorf("tool '%s' not found", toolName)
 	}
-	return tool.invoke(ctx, parameter)
+	return tool.invoke(agent, parameter)
 }
 
 type addTopUsagesTool struct {
@@ -119,13 +109,13 @@ func (tool *addTopUsagesTool) Description() string {
 	return "设置当前磁盘占用最高的地方，每次调用都将覆盖之前的结果"
 }
 
-func (tool *addTopUsagesTool) invoke(ctx *diskCleanerContext, parameter string) (string, error) {
+func (tool *addTopUsagesTool) invoke(agent *Agent, parameter string) (string, error) {
 	var v addTopUsagesParameters
 	err := json.Unmarshal([]byte(parameter), &v)
 	if err != nil {
 		return "", err
 	}
-	ctx.TopUsages = v.Usages
+	agent.TopUsages = v.Usages
 	return "true", nil
 }
 
@@ -168,12 +158,12 @@ func (tool *addTrashFileTool) Description() string {
 	return "添加建议删除、移动、跳过或需要用户进一步确认的文件和目录；每项必须提供说明标题、建议或原因、路径和风险等级，多次调用会合并结果，并移除已被父候选路径包含的子项"
 }
 
-func (tool *addTrashFileTool) invoke(ctx *diskCleanerContext, parameter string) (string, error) {
+func (tool *addTrashFileTool) invoke(agent *Agent, parameter string) (string, error) {
 	var v addTrashFileParameters
 	if err := json.Unmarshal([]byte(parameter), &v); err != nil {
 		return "", err
 	}
-	ctx.TrashFiles = removeNestedTrashFiles(append(ctx.TrashFiles, v.Files...))
+	agent.TrashFiles = removeNestedTrashFiles(append(agent.TrashFiles, v.Files...))
 	return "true", nil
 }
 
@@ -260,7 +250,7 @@ func (g *analyzeDirectoryTool) Description() string {
 	return "按指定深度分析文件树中的目录或文件，以 CSV 返回路径、总大小和类型；每个目录最多展示占用最大的 200 个直接子项"
 }
 
-func (g *analyzeDirectoryTool) invoke(ctx *diskCleanerContext, parameter string) (string, error) {
+func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, error) {
 	var args analyzeDirectoryParameters
 	if err := json.Unmarshal([]byte(parameter), &args); err != nil {
 		return "", fmt.Errorf("decode analyze_directory parameters: %w", err)
@@ -274,12 +264,12 @@ func (g *analyzeDirectoryTool) invoke(ctx *diskCleanerContext, parameter string)
 	if args.Depth < 1 {
 		return "", fmt.Errorf("depth must be at least 1")
 	}
-	if ctx == nil || ctx.FileTree == nil {
+	if agent == nil || agent.tree == nil {
 		return "", fmt.Errorf("file tree is not available")
 	}
 
 	treePath := modelscanner.NormalizeTreePath(args.Path)
-	node, err := ctx.FileTree.FindNode(treePath)
+	node, err := agent.tree.FindNode(treePath)
 	if err != nil {
 		return "", err
 	}
