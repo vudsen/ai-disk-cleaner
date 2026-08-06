@@ -9,6 +9,7 @@
 - 对多个目标路径按并集处理，并使用规范化后的路径边界判断，避免前缀相似路径被误删。
 - 将对话消息历史从 `Agent.run` 的局部变量迁移到 `Agent` 状态，使工具能够安全地原地更新历史。
 - **BREAKING** 将 analyzer 内部 `tool.invoke` 及 `toolsManager.Invoke` 的上下文参数由 `*diskCleanerContext` 改为 `*Agent`；现有工具改为从 Agent 读取文件树并写入分析结果。
+- 工具通过 `IsSupport(*Agent)` 声明状态相关可用性：Low 阶段隐藏 `clear_analyze_history`，High 阶段隐藏 `analyze_directory`，每轮 completion 前重新计算工具列表。
 
 ## Capabilities
 

@@ -7,9 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 
 	"github.com/openai/openai-go/v3"
+)
+
+var myLog = log.New(
+	os.Stdout,
+	"[openai] ",
+	log.LstdFlags,
 )
 
 type agentContextState string
@@ -28,6 +36,7 @@ type Agent struct {
 	config           *llmConfig
 	language         string
 	state            agentContextState
+	usedTokens       int64
 	totalTokens      int64
 	messages         []openai.ChatCompletionMessageParamUnion
 	TrashFiles       []cleaningrecord.TrashFile
@@ -56,7 +65,7 @@ func newAgent(
 		config:           config,
 		language:         language,
 		state:            agentContextStateLow,
-		totalTokens:      0,
+		usedTokens:       0,
 		messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(baseSystemPrompt),
 			openai.UserMessage(i18n.AnalyzerUserPrompt(language)),
@@ -67,28 +76,27 @@ func newAgent(
 }
 
 func (agent *Agent) beforeCompletions() error {
-	if agent.totalTokens >= agent.config.maxTokens {
+	if agent.usedTokens >= agent.config.maxTokens {
 		return errors.New("analyze disk: Maximum number of tokens exceeded")
 	}
 	return nil
 }
 
 func (agent *Agent) afterCompletions() {
-	if agent.totalTokens >= int64(float64(agent.config.maxTokens)*0.8) {
+	if agent.totalTokens >= 5000 {
+		myLog.Println("Switch to agent high state")
 		agent.state = agentStateHigh
-	} else if agent.totalTokens >= int64(float64(agent.config.maxTokens)*0.6) {
-		agent.state = agentStateMedium
 	} else {
 		agent.state = agentContextStateLow
 	}
 }
 
 const agentContextUsageMediumSuffix = `<agent_runtime_instruction>
-WARNING: You have used half of the context size. Stop scanning a wide range and focus on the worthy directory!
+WARNING: You have used half of the context size. Please try your best to use 'clear_analyze_history' tool to clear unused history.
 </agent_runtime_instruction>
 `
 const agentContextUsageHighSuffix = `<agent_runtime_instruction>
-URGENT: You have used most of the context size. Stop scanning and summarise the final result.
+URGENT: You have used most of the context size. Either stop scanning and summarise the final result or use 'clear_analyze_history' tool to reduce the context size!.
 </agent_runtime_instruction>
 `
 
@@ -107,7 +115,6 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 	client := newOpenAIClient(agent.config)
 
 	manager := newManager()
-	llmTools := buildTools(manager)
 
 	var output strings.Builder
 	for {
@@ -118,7 +125,7 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		params := openai.ChatCompletionNewParams{
 			Messages:  agent.messages,
 			Model:     agent.config.model,
-			Tools:     llmTools,
+			Tools:     buildTools(manager, agent),
 			MaxTokens: openai.Int(50000),
 		}
 		extraFields := make(map[string]any, len(agent.config.extraBody)+1)
@@ -136,10 +143,13 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 			return nil, err
 		}
 		completion, err := client.Chat.Completions.New(agent.ctx, params)
-		agent.afterCompletions()
 		if err != nil {
 			return nil, fmt.Errorf("analyze disk: %w", err)
 		}
+		agent.usedTokens += completion.Usage.PromptTokens + completion.Usage.TotalTokens
+		agent.totalTokens = completion.Usage.TotalTokens
+		myLog.Println("Completion turn finished, total", completion.Usage.TotalTokens, "used", agent.usedTokens, "state", agent.state)
+		agent.afterCompletions()
 		if err := agent.ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -147,7 +157,6 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 			return nil, errors.New("analyze disk: LLM returned no choices")
 		}
 
-		agent.totalTokens += completion.Usage.PromptTokens + completion.Usage.TotalTokens
 		message := completion.Choices[0].Message
 		if message.Content != "" {
 			output.WriteString(message.Content)
@@ -175,6 +184,6 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		TrashFiles: agent.TrashFiles,
 		TopUsages:  agent.TopUsages,
 		LLMOutput:  output.String(),
-		TokenUsage: agent.totalTokens,
+		TokenUsage: agent.usedTokens,
 	}, nil
 }

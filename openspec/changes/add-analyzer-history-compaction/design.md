@@ -59,6 +59,12 @@ tool.invoke 与 toolsManager.Invoke 接收 *Agent。现有工具从 agent.tree �
 
 相较始终返回 true，计数摘要不会重新引入大量上下文，却能减少 LLM 为确认效果而重复调用。
 
+### 5. 工具按 Agent 上下文状态动态披露
+
+`tool` 接口增加 `IsSupport(*Agent) bool`，`buildTools` 仅生成当前 Agent 支持的工具定义，并在每次 completion 请求前重新执行过滤，而不是在运行循环外缓存结果。
+
+`analyze_directory` 在 High 状态返回不支持，阻止模型继续扩大扫描上下文；`clear_analyze_history` 在 Low 状态返回不支持，避免上下文尚小时增加无意义操作。Medium 状态同时提供二者，其余结果类工具始终提供。过滤只控制模型可见的工具定义，不在 Invoke 阶段二次拒绝，以免一次 completion 返回后状态变化导致已经获准的调用被拒绝。
+
 ## Risks / Trade-offs
 
 - [SDK 的 message union 修改较繁琐，错误重建可能丢失字段] → 用小型纯函数完成筛选，并为含文本、混合 tool calls 和配对 result 的消息添加单元测试；重建时保留未修改字段。

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -20,9 +21,12 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-func buildTools(manager *toolsManager) []openai.ChatCompletionToolUnionParam {
+func buildTools(manager *toolsManager, agent *Agent) []openai.ChatCompletionToolUnionParam {
 	result := make([]openai.ChatCompletionToolUnionParam, 0, len(manager.tools))
 	for _, tool := range manager.tools {
+		if !tool.IsSupport(agent) {
+			continue
+		}
 		result = append(result, openai.ChatCompletionToolUnionParam{
 			OfFunction: &openai.ChatCompletionFunctionToolParam{
 				Function: shared.FunctionDefinitionParam{
@@ -40,6 +44,7 @@ func buildTools(manager *toolsManager) []openai.ChatCompletionToolUnionParam {
 type tool interface {
 	Name() string
 	Description() string
+	IsSupport(agent *Agent) bool
 	invoke(agent *Agent, parameter string) (string, error)
 	ParameterSchema() map[string]any
 }
@@ -54,6 +59,7 @@ func newManager() *toolsManager {
 		newAddTrashFileTool(),
 		newAddUsageTool(),
 		newAnalyzeDirectoryTool(),
+		newClearAnalyzeHistoryTool(),
 	}
 	toolMap := make(map[string]tool)
 	for _, tool := range tools {
@@ -109,6 +115,10 @@ func (tool *addTopUsagesTool) Description() string {
 	return "设置当前磁盘占用最高的地方，每次调用都将覆盖之前的结果"
 }
 
+func (tool *addTopUsagesTool) IsSupport(agent *Agent) bool {
+	return true
+}
+
 func (tool *addTopUsagesTool) invoke(agent *Agent, parameter string) (string, error) {
 	var v addTopUsagesParameters
 	err := json.Unmarshal([]byte(parameter), &v)
@@ -156,6 +166,10 @@ func (tool *addTrashFileTool) Name() string {
 
 func (tool *addTrashFileTool) Description() string {
 	return "添加建议删除、移动、跳过或需要用户进一步确认的文件和目录；每项必须提供说明标题、建议或原因、路径和风险等级，多次调用会合并结果，并移除已被父候选路径包含的子项"
+}
+
+func (tool *addTrashFileTool) IsSupport(agent *Agent) bool {
+	return true
 }
 
 func (tool *addTrashFileTool) invoke(agent *Agent, parameter string) (string, error) {
@@ -250,7 +264,14 @@ func (g *analyzeDirectoryTool) Description() string {
 	return "按指定深度分析文件树中的目录或文件，以 CSV 返回路径、总大小和类型；每个目录最多展示占用最大的 200 个直接子项"
 }
 
+func (g *analyzeDirectoryTool) IsSupport(agent *Agent) bool {
+	return agent.state != agentStateHigh
+}
+
 func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, error) {
+	if agent.state == agentStateHigh {
+		return "", errors.New("This tool is disabled due to context limitation! Either stop scanning and summarise the final result or use 'clear_analyze_history' tool to reduce the context size")
+	}
 	var args analyzeDirectoryParameters
 	if err := json.Unmarshal([]byte(parameter), &args); err != nil {
 		return "", fmt.Errorf("decode analyze_directory parameters: %w", err)
@@ -263,9 +284,6 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	}
 	if args.Depth < 1 {
 		return "", fmt.Errorf("depth must be at least 1")
-	}
-	if agent == nil || agent.tree == nil {
-		return "", fmt.Errorf("file tree is not available")
 	}
 
 	treePath := modelscanner.NormalizeTreePath(args.Path)

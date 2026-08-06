@@ -2,11 +2,140 @@ package analyzer
 
 import (
 	"encoding/json"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/openai/openai-go/v3"
 )
+
+func TestBuildToolsFiltersByAgentContextState(t *testing.T) {
+	manager := newManager()
+	tests := []struct {
+		name         string
+		state        agentContextState
+		wantAnalyze  bool
+		wantClear    bool
+		wantToolSize int
+	}{
+		{
+			name:         "low",
+			state:        agentContextStateLow,
+			wantAnalyze:  true,
+			wantClear:    false,
+			wantToolSize: 3,
+		},
+		{
+			name:         "medium",
+			state:        agentStateMedium,
+			wantAnalyze:  true,
+			wantClear:    true,
+			wantToolSize: 4,
+		},
+		{
+			name:         "high",
+			state:        agentStateHigh,
+			wantAnalyze:  false,
+			wantClear:    true,
+			wantToolSize: 3,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			names := builtToolNames(manager, &Agent{state: tt.state})
+			if len(names) != tt.wantToolSize {
+				t.Fatalf("tool names = %#v, want %d tools", names, tt.wantToolSize)
+			}
+			if slices.Contains(names, analyzeDirectoryToolName) != tt.wantAnalyze {
+				t.Errorf("analyze_directory availability in %#v", names)
+			}
+			if slices.Contains(names, clearAnalyzeHistoryToolName) != tt.wantClear {
+				t.Errorf("clear_analyze_history availability in %#v", names)
+			}
+			for _, alwaysSupported := range []string{"add_trash_file", "add_top_usages"} {
+				if !slices.Contains(names, alwaysSupported) {
+					t.Errorf("tool names are missing %q: %#v", alwaysSupported, names)
+				}
+			}
+		})
+	}
+}
+
+func TestClearAnalyzeHistoryToolContractAndRegistration(t *testing.T) {
+	tool := newClearAnalyzeHistoryTool()
+	if tool.Name() != clearAnalyzeHistoryToolName {
+		t.Fatalf("tool name = %q", tool.Name())
+	}
+	if !strings.Contains(tool.Description(), "严格后代") || !strings.Contains(tool.Description(), "自身") {
+		t.Fatalf("tool description does not explain preservation boundary: %q", tool.Description())
+	}
+
+	schema := tool.ParameterSchema()
+	if schema["type"] != "object" || schema["additionalProperties"] != false {
+		t.Fatalf("schema root = %#v", schema)
+	}
+	required, ok := schema["required"].([]string)
+	if !ok || !slices.Equal(required, []string{"paths"}) {
+		t.Fatalf("schema required = %#v", schema["required"])
+	}
+	properties := schema["properties"].(map[string]any)
+	paths := properties["paths"].(map[string]any)
+	if paths["type"] != "array" {
+		t.Fatalf("paths schema = %#v", paths)
+	}
+	items := paths["items"].(map[string]any)
+	pattern, ok := items["pattern"].(string)
+	if !ok {
+		t.Fatalf("path item pattern = %#v", items["pattern"])
+	}
+	matcher, err := regexp.Compile(pattern)
+	if err != nil {
+		t.Fatalf("compile path pattern %q: %v", pattern, err)
+	}
+	if !matcher.MatchString("/foo/bar") || matcher.MatchString("foo/bar") || matcher.MatchString(`/foo\bar`) {
+		t.Fatalf("path pattern %q does not enforce logical paths", pattern)
+	}
+	if _, err := tool.invoke(&Agent{}, `{}`); err == nil {
+		t.Fatal("invoke without paths: expected error")
+	}
+
+	manager := newManager()
+	if manager.toolMap[clearAnalyzeHistoryToolName] == nil {
+		t.Fatal("clear_analyze_history is not registered")
+	}
+	definitions, err := json.Marshal(buildTools(manager, &Agent{state: agentStateMedium}))
+	if err != nil {
+		t.Fatalf("encode tool definitions: %v", err)
+	}
+	if !strings.Contains(string(definitions), `"name":"clear_analyze_history"`) ||
+		!strings.Contains(string(definitions), `"strict":true`) {
+		t.Fatalf("clear tool is missing from strict definitions: %s", definitions)
+	}
+
+	agent := &Agent{messages: []openai.ChatCompletionMessageParamUnion{
+		mustHistoryMessage(t, `{"role":"assistant","tool_calls":[{"id":"child","type":"function","function":{"name":"analyze_directory","arguments":"{\"path\":\"/foo/child\",\"depth\":1}"}}]}`),
+		mustHistoryMessage(t, `{"role":"tool","tool_call_id":"child","content":"result"}`),
+	}}
+	result, err := manager.Invoke(clearAnalyzeHistoryToolName, `{"paths":["/foo"]}`, agent)
+	if err != nil {
+		t.Fatalf("invoke registered clear tool: %v", err)
+	}
+	if result != `{"removedAnalyzeCalls":1}` || len(agent.messages) != 0 {
+		t.Fatalf("result = %s, history length = %d", result, len(agent.messages))
+	}
+}
+
+func builtToolNames(manager *toolsManager, agent *Agent) []string {
+	definitions := buildTools(manager, agent)
+	result := make([]string, 0, len(definitions))
+	for _, definition := range definitions {
+		if definition.OfFunction != nil {
+			result = append(result, definition.OfFunction.Function.Name)
+		}
+	}
+	return result
+}
 
 func TestNormalizeAnalyzeHistoryTargetsAndStrictDescendants(t *testing.T) {
 	targets, err := normalizeAnalyzeHistoryTargets([]string{

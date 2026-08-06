@@ -9,7 +9,61 @@ import (
 	"github.com/openai/openai-go/v3"
 )
 
-const analyzeDirectoryToolName = "analyze_directory"
+const (
+	analyzeDirectoryToolName    = "analyze_directory"
+	clearAnalyzeHistoryToolName = "clear_analyze_history"
+)
+
+type clearAnalyzeHistoryTool struct{}
+
+type clearAnalyzeHistoryParameters struct {
+	Paths []string `json:"paths"`
+}
+
+func newClearAnalyzeHistoryTool() *clearAnalyzeHistoryTool {
+	return &clearAnalyzeHistoryTool{}
+}
+
+func (tool *clearAnalyzeHistoryTool) Name() string {
+	return clearAnalyzeHistoryToolName
+}
+
+func (tool *clearAnalyzeHistoryTool) Description() string {
+	return "清除每个目标路径严格后代的历史 analyze_directory 调用及其配对结果，以压缩上下文；目标路径自身、祖先路径和无关路径的扫描历史仍会保留"
+}
+
+func (tool *clearAnalyzeHistoryTool) IsSupport(agent *Agent) bool {
+	return agent.state != agentContextStateLow
+}
+
+func (tool *clearAnalyzeHistoryTool) invoke(agent *Agent, parameter string) (string, error) {
+	var arguments clearAnalyzeHistoryParameters
+	if err := json.Unmarshal([]byte(parameter), &arguments); err != nil {
+		return "", fmt.Errorf("decode clear_analyze_history parameters: %w", err)
+	}
+	if arguments.Paths == nil {
+		return "", fmt.Errorf("paths is required")
+	}
+	return clearAnalyzeHistory(agent, arguments.Paths)
+}
+
+func (tool *clearAnalyzeHistoryTool) ParameterSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"paths": map[string]any{
+				"type":        "array",
+				"description": "要压缩的文件树逻辑路径；每项必须以 / 开头、使用绝对路径",
+				"items": map[string]any{
+					"type":    "string",
+					"pattern": "^/[^\\\\]*$",
+				},
+			},
+		},
+		"required":             []string{"paths"},
+		"additionalProperties": false,
+	}
+}
 
 type clearAnalyzeHistoryResult struct {
 	RemovedAnalyzeCalls int `json:"removedAnalyzeCalls"`
@@ -244,6 +298,7 @@ func normalizeAnalyzeHistoryTargets(paths []string) ([]string, error) {
 	seen := make(map[string]struct{}, len(paths))
 	for index, value := range paths {
 		normalized, err := normalizeAnalyzeHistoryPath(value)
+		myLog.Println("Cleaning history of", value)
 		if err != nil {
 			return nil, fmt.Errorf("invalid path at index %d: %w", index, err)
 		}

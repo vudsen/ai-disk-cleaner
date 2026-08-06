@@ -88,3 +88,24 @@ The tool MUST delete a matched analyze_directory function call together with its
 - **WHEN** the same valid compaction request is invoked more than once without adding new matching scans
 - **THEN** subsequent invocations succeed with zero additional removals
 - **AND** the remaining history is unchanged
+
+### Requirement: Tool availability follows Agent context state
+Every analyzer tool MUST declare whether it supports the active Agent, and the analyzer MUST rebuild the advertised tool definitions for every model completion using that support decision.
+
+#### Scenario: Low context exposes scanning but not compaction
+- **WHEN** the Agent state is low
+- **THEN** analyze_directory is included in the advertised tools
+- **AND** clear_analyze_history is not included
+
+#### Scenario: Medium context exposes scanning and compaction
+- **WHEN** the Agent state is medium
+- **THEN** both analyze_directory and clear_analyze_history are included in the advertised tools
+
+#### Scenario: High context exposes compaction but not scanning
+- **WHEN** the Agent state is high
+- **THEN** clear_analyze_history is included in the advertised tools
+- **AND** analyze_directory is not included
+
+#### Scenario: State change affects the next completion
+- **WHEN** the Agent context state changes between model completions
+- **THEN** the next completion request uses tool definitions filtered for the new state

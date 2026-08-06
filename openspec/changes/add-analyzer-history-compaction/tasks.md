@@ -13,8 +13,9 @@
 
 ## 3. 工具注册与契约
 
-- [ ] 3.1 实现 clear_analyze_history 工具及严格 JSON Schema，要求 paths 字符串数组且声明逻辑路径格式
-- [ ] 3.2 将 clear_analyze_history 注册到 toolsManager，并完善工具描述以强调仅清除目标路径严格后代的扫描历史
+- [x] 3.1 实现 clear_analyze_history 工具及严格 JSON Schema，要求 paths 字符串数组且声明逻辑路径格式
+- [x] 3.2 将 clear_analyze_history 注册到 toolsManager，并完善工具描述以强调仅清除目标路径严格后代的扫描历史
+- [x] 3.3 为 tool 增加 IsSupport(*Agent)，并按 Low/Medium/High 状态在每轮 completion 前动态过滤工具列表
 
 ## 4. 测试与验证
 
