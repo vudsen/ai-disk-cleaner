@@ -88,7 +88,7 @@ func (t debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	contentType := resp.Header.Get("Content-Type")
 
 	if resp.StatusCode >= 400 ||
-		!strings.Contains(contentType, "text/event-stream") {
+		!strings.Contains(contentType, "application/json") {
 
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
