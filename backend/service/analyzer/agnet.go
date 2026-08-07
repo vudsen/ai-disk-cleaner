@@ -79,11 +79,21 @@ func (agent *Agent) beforeCompletions() error {
 	if agent.usedTokens >= agent.config.maxTokens {
 		return errors.New("analyze disk: Maximum number of tokens exceeded")
 	}
+	if agent.config.autoContextCompressEnabled {
+		// 自动压缩模式下，状态在每次压缩后切换
+		return nil
+	}
+	if shouldSwitchToAgentHighState(agent) {
+		agent.state = agentStateHigh
+	}
 	return nil
 }
 
 func shouldCompress(agent *Agent) bool {
-	return agent.totalTokens >= 12000 && agent.state != agentStateHigh
+	if agent.state == agentStateHigh || !agent.config.autoContextCompressEnabled {
+		return false
+	}
+	return agent.totalTokens >= 12000 || shouldSwitchToAgentHighState(agent)
 }
 
 func (agent *Agent) afterCompletions() {}

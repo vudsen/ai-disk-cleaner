@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"ai-disk-cleanner/backend/data/models/setting"
 
@@ -122,6 +123,7 @@ func newOpenAIClient(config *llmConfig) openai.Client {
 	return openai.NewClient(
 		option.WithAPIKey(config.secret),
 		option.WithBaseURL(config.baseURL),
+		option.WithRequestTimeout(time.Duration(30)*time.Second),
 		option.WithDebugLog(log.New(
 			os.Stdout,
 			"[openai] ",

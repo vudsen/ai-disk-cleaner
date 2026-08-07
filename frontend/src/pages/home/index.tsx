@@ -464,7 +464,7 @@ export default function HomePage() {
               </div>
               <p className="text-muted mt-1 truncate text-xs">{task.path}</p>
               <p className="text-muted mt-1 text-xs">
-                {t('common.stat', {
+                {t('common.running', {
                   cnt: task.scanProgress?.itemCount ?? 0,
                   size: formatBytes(task.scanProgress?.scannedSize ?? 0),
                 })}

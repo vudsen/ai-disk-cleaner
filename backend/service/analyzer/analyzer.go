@@ -34,11 +34,11 @@ func (analyzer *Service) Analyze(
 	if onDelta == nil {
 		onDelta = func(string) {}
 	}
-	prompt, err := systemPromptForMode(scanMode)
+	config, err := analyzer.loadLLMConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
-	config, err := analyzer.loadLLMConfig(ctx)
+	prompt, err := systemPromptForMode(scanMode, config.autoContextCompressEnabled)
 	if err != nil {
 		return nil, err
 	}

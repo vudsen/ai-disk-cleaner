@@ -259,8 +259,6 @@ func (g *analyzeDirectoryTool) Name() string {
 	return "analyze_directory"
 }
 
-const analyzeDirectoryRefuseMessage = "该工具已被禁用，请使用 `compress_context` 工具来压缩上下文，"
-
 func (g *analyzeDirectoryTool) Description() string {
 	return "按指定深度展开文件树中的目录或文件，以 CSV 返回路径、总大小和类型；每个目录最多展示占用最大的 200 个直接子项"
 }
@@ -271,7 +269,9 @@ func (g *analyzeDirectoryTool) IsSupport(agent *Agent) bool {
 
 func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, error) {
 	if shouldCompress(agent) {
-		return "", errors.New(analyzeDirectoryRefuseMessage)
+		return "", errors.New("该工具已被禁用，请使用 `compress_context` 工具来压缩上下文，")
+	} else if agent.state == agentStateHigh {
+		return "", errors.New("上下文即将超出限制，该工具已被禁用，立即停止扫描并进行总结")
 	}
 	var args analyzeDirectoryParameters
 	if err := json.Unmarshal([]byte(parameter), &args); err != nil {
@@ -416,8 +416,12 @@ func (tool *compressContextTool) ParameterSchema() map[string]any {
 	}
 }
 
+func shouldSwitchToAgentHighState(agent *Agent) bool {
+	return agent.usedTokens >= int64(float64(agent.config.maxTokens)*0.8)
+}
+
 func resetAnalyzeContext(agent *Agent, summary string) {
-	if agent.usedTokens >= int64(float64(agent.config.maxTokens)*0.8) {
+	if shouldSwitchToAgentHighState(agent) {
 		myLog.Println("Switch to agent high state")
 		agent.state = agentStateHigh
 	} else if agent.usedTokens >= int64(float64(agent.config.maxTokens)*0.5) {

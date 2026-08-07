@@ -161,9 +161,10 @@
     "maxCleaningRecordDesc": "The exceeded records will be deleted on app startup",
     "llmService": "LLM Service",
     "llmServiceDesc": "Config LLM models, it's used to parse the file system tree",
-    "maxTokenInOneConversation": "Max token in conversation",
+    "maxTokenInOneConversation": "Max token in conversation, it is recommended to use between 500,000 and 1,000,000.",
+
     "autoContextCompress": {
-      "label": "Smart Context Compression",
+      "label": "Smart Context Compression(BETA)",
       "warning": "After enabling this feature, LLM scanning may become less stable (it improves in most cases, but may weaken some models and miss some junk files). However, it can greatly reduce the chance of exceeding the maximum context limit configured in settings. We recommend setting the context limit to 620000; lower values may force the LLM to exit early."
     },
     "llmExtraBody": {
