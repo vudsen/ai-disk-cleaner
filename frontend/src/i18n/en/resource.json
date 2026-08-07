@@ -162,6 +162,10 @@
     "llmService": "LLM Service",
     "llmServiceDesc": "Config LLM models, it's used to parse the file system tree",
     "maxTokenInOneConversation": "Max token in conversation",
+    "autoContextCompress": {
+      "label": "Smart Context Compression",
+      "warning": "After enabling this feature, LLM scanning may become less stable (it improves in most cases, but may weaken some models and miss some junk files). However, it can greatly reduce the chance of exceeding the maximum context limit configured in settings. We recommend setting the context limit to 620000; lower values may force the LLM to exit early."
+    },
     "llmExtraBody": {
       "label": "LLM Extra Body",
       "description": "An optional JSON object will be incorporated into the body of each LLM request. If you are using deepseek-v4 or another model that has think mode enabled by default, please disable it via a parameter, as think mode will severely slow down the analysis.",

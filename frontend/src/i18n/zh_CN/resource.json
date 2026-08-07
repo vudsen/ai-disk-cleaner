@@ -162,6 +162,10 @@
     "llmService": "LLM 服务",
     "llmServiceDesc": "配置用于解析文件系统树的 LLM 模型",
     "maxTokenInOneConversation": "单次对话 Token 上限",
+    "autoContextCompress": {
+      "label": "智能上下文压缩",
+      "warning": "开启该功能后，LLM 扫描能力将不稳定(大部分情况下会变强，部分模型会变弱，可能会遗漏部分垃圾文件)，但是可以大幅度避免超过设置中的最大上下文限制(推荐将上下文限制设置为 620000，越低会导致 LLM 强制提前退出)"
+    },
     "llmExtraBody": {
       "label": "LLM 额外请求参数",
       "description": "可选的 JSON 对象，将合并到每次 LLM 请求体中。如果您使用的是 deepseek-v4 或其它默认开启了思考模式的模型，请通过参数将其关闭，思考模式会严重拖慢分析",

@@ -16,12 +16,13 @@ type settingStore interface {
 }
 
 var supportedSettingKeys = map[string]struct{}{
-	"llm.secret":       {},
-	"llm.url":          {},
-	"llm.model":        {},
-	"llm.max-token":    {},
-	"llm.extra-body":   {},
-	"record.max.count": {},
+	"llm.secret":                {},
+	"llm.url":                   {},
+	"llm.model":                 {},
+	"llm.max-token":             {},
+	"llm.auto-context-compress": {},
+	"llm.extra-body":            {},
+	"record.max.count":          {},
 }
 
 func validateSettings(settings []settingmodel.Setting) error {
@@ -42,6 +43,11 @@ func validateSettings(settings []settingmodel.Setting) error {
 			value, err := strconv.ParseInt(item.Value, 10, 64)
 			if err != nil || value <= 0 {
 				return fmt.Errorf("%s must be a positive integer", item.Key)
+			}
+		}
+		if item.Key == "llm.auto-context-compress" {
+			if _, err := strconv.ParseBool(item.Value); err != nil {
+				return fmt.Errorf("%s must be a boolean", item.Key)
 			}
 		}
 		if item.Key == "llm.extra-body" {

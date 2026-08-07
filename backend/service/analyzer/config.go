@@ -23,11 +23,12 @@ type settingStore interface {
 }
 
 type llmConfig struct {
-	secret    string
-	baseURL   string
-	model     string
-	maxTokens int64
-	extraBody map[string]any
+	secret                     string
+	baseURL                    string
+	model                      string
+	maxTokens                  int64
+	autoContextCompressEnabled bool
+	extraBody                  map[string]any
 }
 
 func (analyzer *Service) loadLLMConfig(ctx context.Context) (*llmConfig, error) {
@@ -60,6 +61,13 @@ func (analyzer *Service) loadLLMConfig(ctx context.Context) (*llmConfig, error) 
 	config.maxTokens, err = strconv.ParseInt(strings.TrimSpace(values["llm.max-token"]), 10, 64)
 	if err != nil || config.maxTokens <= 0 {
 		return nil, errors.New("load LLM configuration: llm.max-token must be a positive integer")
+	}
+	autoContextCompress := strings.TrimSpace(values["llm.auto-context-compress"])
+	if autoContextCompress != "" {
+		config.autoContextCompressEnabled, err = strconv.ParseBool(autoContextCompress)
+		if err != nil {
+			return nil, errors.New("load LLM configuration: llm.auto-context-compress must be a boolean")
+		}
 	}
 	extraBody := strings.TrimSpace(values["llm.extra-body"])
 	if extraBody != "" {

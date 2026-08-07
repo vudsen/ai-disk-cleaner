@@ -1,7 +1,9 @@
 import {
   Button,
   Card,
+  Checkbox,
   Input,
+  Label,
   Link,
   ListBox,
   Select,
@@ -34,6 +36,7 @@ type SettingValues = {
   llmURL: string
   llmModel: string
   llmMaxToken: string
+  llmAutoContextCompress: string
   llmExtraBody: string
   recordMaxCount: string
 }
@@ -44,6 +47,7 @@ const initialValues: SettingValues = {
   llmURL: '',
   llmModel: '',
   llmMaxToken: '50000',
+  llmAutoContextCompress: 'false',
   llmExtraBody: '',
   recordMaxCount: '10',
 }
@@ -64,6 +68,7 @@ function valuesFromSettings(
     llmURL: values.get('llm.url') ?? '',
     llmModel: values.get('llm.model') ?? '',
     llmMaxToken: values.get('llm.max-token') ?? '50000',
+    llmAutoContextCompress: values.get('llm.auto-context-compress') ?? 'false',
     llmExtraBody: values.get('llm.extra-body') ?? '',
     recordMaxCount: values.get('record.max.count') ?? '10',
   }
@@ -75,6 +80,10 @@ function settingsFromValues(values: SettingValues): setting.Setting[] {
     { key: 'llm.url', value: values.llmURL.trim() },
     { key: 'llm.model', value: values.llmModel.trim() },
     { key: 'llm.max-token', value: values.llmMaxToken.trim() },
+    {
+      key: 'llm.auto-context-compress',
+      value: values.llmAutoContextCompress,
+    },
     { key: 'llm.extra-body', value: values.llmExtraBody.trim() },
     { key: 'record.max.count', value: values.recordMaxCount.trim() },
   ]
@@ -289,6 +298,34 @@ export default function SettingsPage() {
               type="number"
             />
           </ControlledNextUIFormWrapper>
+          <div className="col-span-2">
+            <ControlledNextUIFormWrapper
+              control={control}
+              name="llmAutoContextCompress"
+            >
+              {(field) => (
+                <div className="space-y-2">
+                  <Checkbox
+                    isDisabled={isSaving}
+                    isSelected={field.value === 'true'}
+                    onChange={(value) => field.onChange(String(value))}
+                  >
+                    <Checkbox.Content>
+                      <Checkbox.Control>
+                        <Checkbox.Indicator />
+                      </Checkbox.Control>
+                      <Label>{t('settings.autoContextCompress.label')}</Label>
+                    </Checkbox.Content>
+                  </Checkbox>
+                  {field.value === 'true' && (
+                    <p className="text-warning text-sm">
+                      {t('settings.autoContextCompress.warning')}
+                    </p>
+                  )}
+                </div>
+              )}
+            </ControlledNextUIFormWrapper>
+          </div>
           <div className="col-span-2">
             <ControlledNextUIFormWrapper
               control={control}

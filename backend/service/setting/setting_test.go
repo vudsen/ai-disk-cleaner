@@ -28,6 +28,7 @@ func TestSaveValidatesAndPersistsSettings(t *testing.T) {
 		{Key: "llm.url", Value: "https://example.com/v1"},
 		{Key: "llm.model", Value: "model"},
 		{Key: "llm.max-token", Value: "50000"},
+		{Key: "llm.auto-context-compress", Value: "false"},
 		{Key: "llm.extra-body", Value: `{"temperature":0.7}`},
 		{Key: "record.max.count", Value: "10"},
 	}
@@ -48,6 +49,7 @@ func TestSaveRejectsInvalidMaxToken(t *testing.T) {
 		{Key: "llm.url", Value: ""},
 		{Key: "llm.model", Value: ""},
 		{Key: "llm.max-token", Value: "0"},
+		{Key: "llm.auto-context-compress", Value: "false"},
 		{Key: "llm.extra-body", Value: ""},
 		{Key: "record.max.count", Value: "10"},
 	}
@@ -68,6 +70,7 @@ func TestSaveRejectsInvalidRecordMaxCount(t *testing.T) {
 		{Key: "llm.url", Value: ""},
 		{Key: "llm.model", Value: ""},
 		{Key: "llm.max-token", Value: "50000"},
+		{Key: "llm.auto-context-compress", Value: "false"},
 		{Key: "llm.extra-body", Value: ""},
 		{Key: "record.max.count", Value: "0"},
 	}
@@ -88,6 +91,7 @@ func TestSaveRejectsInvalidExtraBody(t *testing.T) {
 		{Key: "llm.url", Value: ""},
 		{Key: "llm.model", Value: ""},
 		{Key: "llm.max-token", Value: "50000"},
+		{Key: "llm.auto-context-compress", Value: "false"},
 		{Key: "llm.extra-body", Value: "[]"},
 		{Key: "record.max.count", Value: "10"},
 	}
