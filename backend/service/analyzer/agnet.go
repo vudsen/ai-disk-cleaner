@@ -82,35 +82,21 @@ func (agent *Agent) beforeCompletions() error {
 	return nil
 }
 
-func (agent *Agent) afterCompletions() {
-	if agent.totalTokens >= 10000 {
-		myLog.Println("Switch to agent high state")
-		agent.state = agentStateHigh
-	} else {
-		agent.state = agentContextStateLow
-	}
+func shouldCompress(agent *Agent) bool {
+	return agent.totalTokens >= 12000 && agent.state != agentStateHigh
 }
 
-const agentContextUsageMediumSuffix = `<agent_runtime_instruction>
-WARNING: You have used half of the context size. Use 'clear_analyze_history' only for specific non-root child directories whose descendant scan results you have already read, whose analysis is complete, and which you will no longer reference. Never pass '/' and never clear a directory branch that is still being analyzed or needed for later reasoning.
-</agent_runtime_instruction>
-`
-const agentContextUsageHighSuffix = `<agent_runtime_instruction>
-**紧急: 您已用完大部分上下文空间**。你现在可以:
-- 停止扫描，并汇总最终结果
-- 暂时停止扫描，逐一排查所有 analyze_directory 工具调用结果，然后使用 clear_analyze_history 清除掉**所有**你不再需要的目录结果，你只有这一次机会，如果下次再次超过上下文限制，程序将会退出!
-</agent_runtime_instruction>
-`
+func (agent *Agent) afterCompletions() {}
 
 func (agent *Agent) buildSystemPrompt() openai.ChatCompletionMessageParamUnion {
-	switch agent.state {
-	case agentStateMedium:
-		return openai.SystemMessage(agent.baseSystemPrompt + agentContextUsageMediumSuffix)
-	case agentStateHigh:
-		return openai.SystemMessage(agent.baseSystemPrompt + agentContextUsageHighSuffix)
-	default:
-		return openai.SystemMessage(agent.baseSystemPrompt)
+	builder := strings.Builder{}
+	builder.WriteString(agent.baseSystemPrompt)
+	if shouldCompress(agent) {
+		builder.WriteString("<should_compress>true</should_compress>")
+	} else {
+		builder.WriteString("<should_compress>false</should_compress>")
 	}
+	return openai.SystemMessage(builder.String())
 }
 
 func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
@@ -148,7 +134,7 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("analyze disk: %w", err)
 		}
-		agent.usedTokens += completion.Usage.PromptTokens + completion.Usage.TotalTokens
+		agent.usedTokens += completion.Usage.TotalTokens
 		agent.totalTokens = completion.Usage.TotalTokens
 		myLog.Println("Completion turn finished, total", completion.Usage.TotalTokens, "used", agent.usedTokens, "state", agent.state)
 		agent.afterCompletions()
@@ -168,7 +154,16 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 			break
 		}
 		agent.messages = append(agent.messages, message.ToParam())
+		toolCalls := message.ToolCalls
+
+		appendToolResult := true
 		for _, item := range message.ToolCalls {
+			if item.Function.Name == compressContextToolName {
+				appendToolResult = false
+				break
+			}
+		}
+		for _, item := range toolCalls {
 			function := item.Function
 			result, err := manager.Invoke(
 				function.Name,
@@ -178,7 +173,9 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 			if err != nil {
 				result = err.Error()
 			}
-			agent.messages = append(agent.messages, openai.ToolMessage(result, item.ID))
+			if appendToolResult {
+				agent.messages = append(agent.messages, openai.ToolMessage(result, item.ID))
+			}
 		}
 	}
 

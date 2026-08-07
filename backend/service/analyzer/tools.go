@@ -259,18 +259,18 @@ func (g *analyzeDirectoryTool) Name() string {
 	return "analyze_directory"
 }
 
-const analyzeDirectoryRefuseMessage = "this tool is disabled due to context limitation! Either stop scanning and summarise the final result or use 'clear_analyze_history' tool to reduce the context size"
+const analyzeDirectoryRefuseMessage = "该工具已被禁用，请使用 `compress_context` 工具来压缩上下文，"
 
 func (g *analyzeDirectoryTool) Description() string {
 	return "按指定深度展开文件树中的目录或文件，以 CSV 返回路径、总大小和类型；每个目录最多展示占用最大的 200 个直接子项"
 }
 
 func (g *analyzeDirectoryTool) IsSupport(agent *Agent) bool {
-	return agent.state != agentStateHigh
+	return agent.state != agentStateHigh && !shouldCompress(agent)
 }
 
 func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, error) {
-	if agent.state == agentStateHigh {
+	if shouldCompress(agent) {
 		return "", errors.New(analyzeDirectoryRefuseMessage)
 	}
 	var args analyzeDirectoryParameters
@@ -291,13 +291,6 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	}
 
 	entries := collectDirectoryUsage(node, treePath)
-
-	sort.Slice(entries, func(i, j int) bool {
-		if entries[i].totalSize != entries[j].totalSize {
-			return entries[i].totalSize > entries[j].totalSize
-		}
-		return entries[i].path < entries[j].path
-	})
 
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
@@ -346,6 +339,9 @@ func collectDirectoryUsage(node *modelscanner.FileNode, base string) []directory
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].totalSize > entries[j].totalSize
 	})
+	if len(entries) > 200 {
+		return entries[:200]
+	}
 	return entries
 }
 
@@ -362,4 +358,110 @@ func (g *analyzeDirectoryTool) ParameterSchema() map[string]any {
 		"required":             []string{"path"},
 		"additionalProperties": false,
 	}
+}
+
+const (
+	compressContextToolName = "compress_context"
+)
+
+type compressContextTool struct{}
+
+type clearAnalyzeHistoryParameters struct {
+	Summary string `json:"summary"`
+}
+
+func newClearAnalyzeHistoryTool() *compressContextTool {
+	return &compressContextTool{}
+}
+
+func (tool *compressContextTool) Name() string {
+	return compressContextToolName
+}
+
+func (tool *compressContextTool) Description() string {
+	return "开启全新的扫描上下文。summary 必须列出当前和历史已经搜索的目录（这些目录后续禁止再次扫描），以及剩余未扫描的目录。旧对话不会带入新上下文。"
+}
+
+func (tool *compressContextTool) IsSupport(agent *Agent) bool {
+	return agent.state != agentStateHigh
+}
+
+func (tool *compressContextTool) invoke(agent *Agent, parameter string) (string, error) {
+	var arguments clearAnalyzeHistoryParameters
+	decoder := json.NewDecoder(strings.NewReader(parameter))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&arguments); err != nil {
+		return "", fmt.Errorf("decode compress_context parameters: %w", err)
+	}
+	summary := strings.TrimSpace(arguments.Summary)
+	if summary == "" {
+		return "", fmt.Errorf("summary is required")
+	}
+
+	resetAnalyzeContext(agent, summary)
+	return "Ok", nil
+}
+
+func (tool *compressContextTool) ParameterSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"summary": map[string]any{
+				"type":        "string",
+				"description": "扫描交接总结，必须明确列出两部分：1. 当前已经搜索的目录，且这些目录后续禁止再次扫描；2. 剩余未扫描的目录。",
+			},
+		},
+		"required":             []string{"summary"},
+		"additionalProperties": false,
+	}
+}
+
+func resetAnalyzeContext(agent *Agent, summary string) {
+	if agent.usedTokens >= int64(float64(agent.config.maxTokens)*0.8) {
+		myLog.Println("Switch to agent high state")
+		agent.state = agentStateHigh
+	} else if agent.usedTokens >= int64(float64(agent.config.maxTokens)*0.5) {
+		myLog.Println("Switch to agent medium state")
+		agent.state = agentStateMedium
+	} else {
+		agent.state = agentContextStateLow
+	}
+
+	userPrompt := strings.Builder{}
+	userPrompt.WriteString("请基于以下扫描交接继续分析。禁止再次扫描已经搜索的目录，只从剩余未扫描的目录继续。使用 `")
+	userPrompt.WriteString(agent.language)
+	userPrompt.WriteString("` 语言输出。\n\n<scan_summary>\n")
+	userPrompt.WriteString(summary)
+	userPrompt.WriteString("</scan_summary>\n\n")
+
+	switch agent.state {
+	case agentStateMedium:
+		userPrompt.WriteString(`<context_state>
+当前上下文状态：Medium。
+
+上下文空间已经受到限制，需要提高扫描效率：
+
+- 优先处理已经发现的大型、高价值目录和文件。
+- 减少低收益的目录探索，不要为了收集更多候选而深度遍历小目录。
+- 对用途不明确、风险较高或需要多次下钻才能确认的目录，可以直接放弃。
+- 添加候选时优先选择占用空间大、删除边界明确、安全性高的项目。
+- 继续执行当前任务，但避免无意义的探索。
+</context_state>`)
+		break
+	case agentStateHigh:
+		userPrompt.WriteString(`<context_state>
+当前上下文状态：High。
+
+当前上下文空间有限，必须进入收尾模式：
+
+- 立即停止目录探索，使用 'add_trash_file' 和 'add_top_usages' 工具进行总结
+</context_state>`)
+		break
+	}
+	agent.messages = []openai.ChatCompletionMessageParamUnion{
+		agent.messages[0],
+		openai.UserMessage(userPrompt.String()),
+	}
+
+	agent.totalTokens = 0
 }
