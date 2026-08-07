@@ -265,7 +265,7 @@ func TestSettingDefaultsAndSave(t *testing.T) {
 	for _, item := range settings {
 		got[item.Key] = item.Value
 	}
-	if len(got) != 7 || got["llm.max-token"] != "50000" || got["llm.auto-context-compress"] != "false" || got["llm.extra-body"] != "" || got["record.max.count"] != "10" {
+	if len(got) != 7 || got["llm.max-token"] != "620000" || got["llm.auto-context-compress"] != "false" || got["llm.extra-body"] != "" || got["record.max.count"] != "10" {
 		t.Fatalf("default settings = %#v", got)
 	}
 
