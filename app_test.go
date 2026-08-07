@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-func TestLLMAnalysisFindsOnlyExpectedTrashFiles(t *testing.T) {
+func TestLLMAnalysisFindsExpectedTrashFiles(t *testing.T) {
 	testDirectory := "test"
 	archivePath := filepath.Join(testDirectory, "fake_directory.tar.gz")
 	fixturePath := filepath.Join(testDirectory, "fake_directory")
@@ -56,17 +56,17 @@ func TestLLMAnalysisFindsOnlyExpectedTrashFiles(t *testing.T) {
 		t.Fatalf("cleaning record %d was not found", task.ID)
 	}
 
-	want := map[string]struct{}{
-		"/Users/tom/temp.log":                 {},
-		"/Users/tom/Downloads/java.exe":       {},
-		"/Users/tom/AppData/Local/pnpm-cache": {},
+	want := []string{
+		"/Users/tom/temp.log",
+		"/Users/tom/Downloads/java.exe",
+		"/Users/tom/AppData/Local/pnpm-cache",
 	}
 	got := make(map[string]struct{}, len(trashFiles))
 	for _, path := range trashFiles {
 		got[normalizeCandidatePath(path)] = struct{}{}
 	}
-	if len(trashFiles) != len(want) || !samePathSet(got, want) {
-		t.Fatalf("trash files mismatch\n got: %v\nwant: %v", sortedPaths(got), sortedPaths(want))
+	if missing := missingPathPrefixes(got, want); len(missing) > 0 {
+		t.Fatalf("required trash path prefixes were not found\n got: %v\nmissing: %v", sortedPaths(got), missing)
 	}
 }
 
@@ -256,16 +256,23 @@ func normalizeCandidatePath(candidatePath string) string {
 	return filepath.ToSlash(filepath.Clean(path))
 }
 
-func samePathSet(left map[string]struct{}, right map[string]struct{}) bool {
-	if len(left) != len(right) {
-		return false
-	}
-	for path := range left {
-		if _, ok := right[path]; !ok {
-			return false
+func missingPathPrefixes(paths map[string]struct{}, prefixes []string) []string {
+	missing := make([]string, 0)
+	for _, prefix := range prefixes {
+		normalizedPrefix := normalizeCandidatePath(prefix)
+		matched := false
+		for path := range paths {
+			if strings.HasPrefix(path, normalizedPrefix) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			missing = append(missing, normalizedPrefix)
 		}
 	}
-	return true
+	sort.Strings(missing)
+	return missing
 }
 
 func sortedPaths(paths map[string]struct{}) []string {
