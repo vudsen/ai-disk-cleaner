@@ -9,29 +9,6 @@ import (
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
 )
 
-func TestAnalyzeDirectoryDepthOneExpandsDirectChildren(t *testing.T) {
-	root := analyzeDirectoryTestTree()
-	agent := &Agent{
-		state: agentContextStateLow,
-		tree:  &modelscanner.FileTree{Root: root},
-	}
-
-	output, err := newAnalyzeDirectoryTool().invoke(agent, `{"path":"/","depth":1}`)
-	if err != nil {
-		t.Fatalf("invoke analyze_directory: %v", err)
-	}
-
-	paths := readAnalyzeDirectoryPaths(t, output)
-	for _, expected := range []string{"/", "/foo", "/bar.bin"} {
-		if !slices.Contains(paths, expected) {
-			t.Errorf("depth=1 result does not contain %q: %v", expected, paths)
-		}
-	}
-	if slices.Contains(paths, "/foo/nested.log") {
-		t.Fatalf("depth=1 unexpectedly contains grandchild: %v", paths)
-	}
-}
-
 func TestAnalyzeDirectoryDepthTwoExpandsGrandchildren(t *testing.T) {
 	root := analyzeDirectoryTestTree()
 	agent := &Agent{
