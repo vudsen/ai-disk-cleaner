@@ -161,6 +161,15 @@
     "maxCleaningRecordDesc": "The exceeded records will be deleted on app startup",
     "llmService": "LLM Service",
     "llmServiceDesc": "Config LLM models, it's used to parse the file system tree",
+    "testConnection": {
+      "button": "Test Connection",
+      "confirmTitle": "Test LLM Connection",
+      "confirmMessage": "Testing the connection will consume a small number of tokens. Continue?",
+      "confirm": "Run Test",
+      "success": "Connection Test Succeeded",
+      "successDescription": "The LLM returned a response successfully",
+      "failed": "Connection Test Failed"
+    },
     "maxTokenInOneConversation": "Max token in conversation, it is recommended to use between 500,000 and 1,000,000.",
 
     "autoContextCompress": {

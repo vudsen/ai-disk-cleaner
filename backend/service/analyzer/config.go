@@ -6,9 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -40,9 +38,14 @@ func (analyzer *Service) loadLLMConfig(ctx context.Context) (*llmConfig, error) 
 	if err != nil {
 		return nil, fmt.Errorf("load LLM configuration: %w", err)
 	}
+	return parseLLMConfig(settings)
+}
+
+func parseLLMConfig(settings []setting.Setting) (*llmConfig, error) {
+	var err error
 	values := make(map[string]string, len(settings))
-	for _, setting := range settings {
-		values[setting.Key] = setting.Value
+	for _, item := range settings {
+		values[item.Key] = item.Value
 	}
 
 	config := llmConfig{
@@ -124,11 +127,11 @@ func newOpenAIClient(config *llmConfig) openai.Client {
 		option.WithAPIKey(config.secret),
 		option.WithBaseURL(config.baseURL),
 		option.WithRequestTimeout(time.Duration(30)*time.Second),
-		option.WithDebugLog(log.New(
-			os.Stdout,
-			"[openai] ",
-			log.LstdFlags,
-		)),
+		//option.WithDebugLog(log.New(
+		//	os.Stdout,
+		//	"[openai] ",
+		//	log.LstdFlags,
+		//)),
 		option.WithHTTPClient(client),
 	)
 }

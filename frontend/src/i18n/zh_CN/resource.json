@@ -161,6 +161,15 @@
     "maxCleaningRecordDesc": "应用启动时将删除超出上限的记录",
     "llmService": "LLM 服务",
     "llmServiceDesc": "配置用于解析文件系统树的 LLM 模型",
+    "testConnection": {
+      "button": "测试连接",
+      "confirmTitle": "测试 LLM 连接",
+      "confirmMessage": "测试连接会消耗少量 Token，是否继续？",
+      "confirm": "确认测试",
+      "success": "连接测试成功",
+      "successDescription": "LLM 已正常返回响应",
+      "failed": "连接测试失败"
+    },
     "maxTokenInOneConversation": "每次清理 Token 消耗上限，建议在 600000 到 1000000 之间",
     "autoContextCompress": {
       "label": "智能上下文压缩(BETA)",

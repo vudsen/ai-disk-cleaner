@@ -11,7 +11,7 @@ export type DialogConfig = {
   cancelBtnText?: string
   onConfirm?: () => Promise<unknown> | void
   onCancel?: () => void
-  color?: 'accent' | 'danger'
+  color?: 'accent' | 'danger' | 'warning'
   hideCancel?: boolean
   isDismissable?: boolean
 }

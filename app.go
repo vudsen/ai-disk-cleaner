@@ -194,6 +194,13 @@ func (a *App) SaveSettings(settings []setting.Setting) error {
 	return service.GetSettingService().Save(settings)
 }
 
+func (a *App) TestLLMConnection(settings []setting.Setting) error {
+	if err := a.ready(); err != nil {
+		return err
+	}
+	return service.GetAnalyzerService().TestConnection(a.ctx, settings)
+}
+
 func (a *App) ready() error {
 	if a.startupError != nil {
 		return fmt.Errorf("application startup: %w", a.startupError)

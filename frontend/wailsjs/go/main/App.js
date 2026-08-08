@@ -77,3 +77,7 @@ export function StartCleaning(arg1, arg2, arg3) {
 export function StopCleaning(arg1) {
   return window['go']['main']['App']['StopCleaning'](arg1);
 }
+
+export function TestLLMConnection(arg1) {
+  return window['go']['main']['App']['TestLLMConnection'](arg1);
+}

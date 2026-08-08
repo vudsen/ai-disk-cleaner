@@ -14,6 +14,7 @@ import {
   Bot,
   ExternalLink,
   LoaderCircle,
+  PlugZap,
   Save,
   SlidersHorizontal,
 } from 'lucide-react'
@@ -21,8 +22,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import type { setting } from '../../../wailsjs/go/models'
-import { ListSettings, SaveSettings } from '../../../wailsjs/go/main/App'
+import {
+  ListSettings,
+  SaveSettings,
+  TestLLMConnection,
+} from '../../../wailsjs/go/main/App'
 import ControlledNextUIFormWrapper from '@/components/ControlledNextUIFormWrapper'
+import { showDialog } from '@/components/DialogProvider'
 import { toastError } from '@/util/toast-error'
 import i18n, {
   changeLanguage,
@@ -143,6 +149,40 @@ export default function SettingsPage() {
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const testConnection = async () => {
+    if (
+      !(await trigger([
+        'llmSecret',
+        'llmURL',
+        'llmModel',
+        'llmMaxToken',
+        'llmExtraBody',
+      ]))
+    ) {
+      return
+    }
+
+    try {
+      await TestLLMConnection(settingsFromValues(getValues()))
+      toast(t('settings.testConnection.success'), {
+        description: t('settings.testConnection.successDescription'),
+        variant: 'success',
+      })
+    } catch (reason) {
+      toastError(reason, t('settings.testConnection.failed'))
+    }
+  }
+
+  const confirmTestConnection = () => {
+    showDialog({
+      title: t('settings.testConnection.confirmTitle'),
+      message: t('settings.testConnection.confirmMessage'),
+      confirmBtnText: t('settings.testConnection.confirm'),
+      onConfirm: testConnection,
+      color: 'warning',
+    })
   }
 
   if (isLoading) {
@@ -366,24 +406,35 @@ export default function SettingsPage() {
             <span className="text-danger">加载设置失败：{loadError}</span>
           )}
         </div>
-        <Button
-          className="min-w-28 gap-2 rounded-xl"
-          isDisabled={isSaving || Boolean(loadError) || !hasWailsRuntime()}
-          isPending={isSaving}
-          variant="primary"
-          onPress={() => void save()}
-        >
-          {isSaving ? (
-            <LoaderCircle
-              aria-hidden="true"
-              className="animate-spin"
-              size={16}
-            />
-          ) : (
-            <Save aria-hidden="true" size={16} />
-          )}
-          {isSaving ? t('common.loading') : t('common.save')}
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            className="min-w-28 gap-2 rounded-xl"
+            isDisabled={isSaving || Boolean(loadError) || !hasWailsRuntime()}
+            variant="secondary"
+            onPress={confirmTestConnection}
+          >
+            <PlugZap aria-hidden="true" size={16} />
+            {t('settings.testConnection.button')}
+          </Button>
+          <Button
+            className="min-w-28 gap-2 rounded-xl"
+            isDisabled={isSaving || Boolean(loadError) || !hasWailsRuntime()}
+            isPending={isSaving}
+            variant="primary"
+            onPress={() => void save()}
+          >
+            {isSaving ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="animate-spin"
+                size={16}
+              />
+            ) : (
+              <Save aria-hidden="true" size={16} />
+            )}
+            {isSaving ? t('common.loading') : t('common.save')}
+          </Button>
+        </div>
       </div>
 
       <Card className="flex-col items-center rounded-3xl">
