@@ -121,10 +121,9 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		}
 
 		params := openai.ChatCompletionNewParams{
-			Messages:  agent.messages,
-			Model:     agent.config.model,
-			Tools:     buildTools(manager, agent),
-			MaxTokens: openai.Int(50000),
+			Messages: agent.messages,
+			Model:    agent.config.model,
+			Tools:    buildTools(manager, agent),
 		}
 		extraFields := make(map[string]any, len(agent.config.extraBody)+1)
 		for key, value := range agent.config.extraBody {

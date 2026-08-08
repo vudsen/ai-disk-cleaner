@@ -174,7 +174,7 @@
 
     "autoContextCompress": {
       "label": "Smart Context Compression(BETA)",
-      "warning": "After enabling this feature, LLM scanning may become less stable (it improves in most cases, but may weaken some models and miss some junk files). However, it can greatly reduce the chance of exceeding the maximum context limit configured in settings. We recommend setting the context limit to 620000; lower values may force the LLM to exit early."
+      "warning": "Enabling this feature will automatically compress the context once it reaches a certain size. It's generally not recommended to enable this feature; it should only be done when the token budget is limited or the context becomes full due to the model itself."
     },
     "llmExtraBody": {
       "label": "LLM Extra Body",
