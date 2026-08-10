@@ -62,7 +62,7 @@
       "deleteSelected": "Delete Selected {{ cnt }} files",
       "deleting": "Deleting",
       "deleteDialogTitle": "Delete Files",
-      "deleteConfirmation": "Are you sure you want to delete the selected {{ count }} files or directories? This action cannot be undone.",
+      "deleteConfirmation": "Are you sure you want to delete {{path}}? This operation cannot be undone.",
       "keepOriginalDirectories": "Keep original directories",
       "deleteFailed": "Delete Failed",
       "deleteFailuresTitle": "Some Files Could Not Be Deleted",
@@ -107,7 +107,9 @@
       "startMigrate": "Start Migrate",
       "migrating": "Migrating...",
       "migrateRetryStep": "Retry Step {{ step }}",
-      "backToRecords": "Back To Cleanup Records"
+      "backToRecords": "Back To Cleanup Records",
+      "deleteSuccess": "Delete Success",
+      "deleteSuccessMsg": "{{ path }} deleted"
     }
   },
   "migration": {

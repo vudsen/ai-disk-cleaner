@@ -1,5 +1,4 @@
-import { Button, Card, Checkbox, Label } from '@heroui/react'
-import type { Selection } from '@heroui/react'
+import { Button, Card, Checkbox, Label, toast } from '@heroui/react'
 import type { cleaner } from '../../../../wailsjs/go/models'
 import { ArrowLeft } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -25,7 +24,6 @@ export default function CleanupDetailPage() {
   const { id } = useParams()
   const { error, isLoading, isStopping, records, refreshRecords, stop, task } =
     useCleaningTask()
-  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteFailures, setDeleteFailures] = useState<cleaner.DeleteFailure[]>(
     [],
@@ -41,26 +39,16 @@ export default function CleanupDetailPage() {
   const trashFiles = record?.trashFiles ?? []
 
   useEffect(() => {
-    setSelectedPaths(new Set())
     setDeleteFailures([])
   }, [recordID])
 
-  const handleDelete = async (paths: string[] = Array.from(selectedPaths)) => {
-    const deletablePaths = new Set(
-      trashFiles.filter((file) => !file.isDeleted).map((file) => file.path),
-    )
-    const pathsToDelete = Array.from(new Set(paths)).filter((path) =>
-      deletablePaths.has(path),
-    )
-    if (pathsToDelete.length === 0 || !record) {
-      return
-    }
+  const handleDelete = async (path: string) => {
     let keepOriginalDirectories = true
     showDialog({
       title: t('cleanup.detail.deleteDialogTitle'),
       message: (
         <DeleteConfirmation
-          count={pathsToDelete.length}
+          path={path}
           onKeepOriginalDirectoriesChange={(value) => {
             keepOriginalDirectories = value
           }}
@@ -73,27 +61,25 @@ export default function CleanupDetailPage() {
           setDeleteFailures([])
           setKeepOriginalDirectoriesForRetry(keepOriginalDirectories)
           const failures = await DeleteTrashFiles(
-            record.id,
-            pathsToDelete,
+            record!.id,
+            [path],
             keepOriginalDirectories,
           )
           setDeleteFailures(failures)
-          const failedPaths = failures.map((failure) => failure.path)
-          const deletedPaths = new Set(
-            pathsToDelete.filter((path) => {
-              const candidatePath = resolveCandidatePath(record.path, path)
-              return !failedPaths.some((failedPath) =>
-                isSameOrDescendantPath(failedPath, candidatePath, record.path),
-              )
-            }),
-          )
-          setSelectedPaths(
-            (current) =>
-              new Set(
-                Array.from(current).filter((path) => !deletedPaths.has(path)),
-              ),
-          )
           await refreshRecords()
+          toast(t('cleanup.detail.deleteSuccess'), {
+            actionProps: {
+              children: '关闭',
+              onPress: () => toast.clear(),
+              variant: 'tertiary',
+            },
+            description: (
+              <div className="break-all">
+                {t('cleanup.detail.deleteSuccessMsg', { path })}
+              </div>
+            ),
+            variant: 'success',
+          })
         } catch (reason) {
           toastError(reason, t('cleanup.detail.deleteFailed'))
         } finally {
@@ -107,33 +93,7 @@ export default function CleanupDetailPage() {
     setDeleteFailures((current) =>
       current.filter((failure) => failure.path !== path),
     )
-    setSelectedPaths(
-      (current) =>
-        new Set(
-          Array.from(current).filter(
-            (selectedPath) =>
-              !isSameOrDescendantPath(
-                path,
-                resolveCandidatePath(record?.path ?? '', selectedPath),
-                record?.path ?? '',
-              ),
-          ),
-        ),
-    )
     await refreshRecords()
-  }
-
-  const handleSelectionChange = (keys: Selection) => {
-    const deletablePaths = new Set(
-      trashFiles.filter((file) => !file.isDeleted).map((file) => file.path),
-    )
-    setSelectedPaths(
-      keys === 'all'
-        ? deletablePaths
-        : new Set(
-            Array.from(keys, String).filter((path) => deletablePaths.has(path)),
-          ),
-    )
   }
 
   return (
@@ -167,9 +127,7 @@ export default function CleanupDetailPage() {
                 files={trashFiles}
                 isDeleting={isDeleting}
                 rootPath={record.path}
-                selectedPaths={selectedPaths}
                 onDelete={(paths) => void handleDelete(paths)}
-                onSelectionChange={handleSelectionChange}
               />
             </>
           )}
@@ -197,46 +155,8 @@ export default function CleanupDetailPage() {
   )
 }
 
-function resolveCandidatePath(rootPath: string, candidatePath: string) {
-  if (
-    candidatePath.startsWith('/') ||
-    /^[A-Za-z]:[\\/]/.test(candidatePath) ||
-    /^[\\/]{2}/.test(candidatePath)
-  ) {
-    return candidatePath
-  }
-  const separator = rootPath.includes('\\') ? '\\' : '/'
-  return `${rootPath.replace(/[\\/]+$/, '')}${separator}${candidatePath.replace(
-    /^[\\/]+/,
-    '',
-  )}`
-}
-
-function comparablePath(path: string, rootPath: string) {
-  const normalized = path.replace(/\\/g, '/').replace(/\/{2,}/g, '/')
-  return /^[A-Za-z]:[\\/]/.test(rootPath)
-    ? normalized.toLowerCase()
-    : normalized
-}
-
-function isSameOrDescendantPath(
-  path: string,
-  parentPath: string,
-  rootPath: string,
-) {
-  const comparable = comparablePath(path, rootPath).replace(/\/+$/, '')
-  const comparableParent = comparablePath(parentPath, rootPath).replace(
-    /\/+$/,
-    '',
-  )
-  return (
-    comparable === comparableParent ||
-    comparable.startsWith(`${comparableParent}/`)
-  )
-}
-
 type DeleteConfirmationProps = {
-  count: number
+  path: string
   onKeepOriginalDirectoriesChange: (value: boolean) => void
 }
 
@@ -245,7 +165,7 @@ type DeleteConfirmationValues = {
 }
 
 function DeleteConfirmation({
-  count,
+  path,
   onKeepOriginalDirectoriesChange,
 }: DeleteConfirmationProps) {
   const { t } = useTranslation()
@@ -254,8 +174,8 @@ function DeleteConfirmation({
   })
 
   return (
-    <div className="space-y-4">
-      <p>{t('cleanup.detail.deleteConfirmation', { count })}</p>
+    <div className="space-y-4 break-all">
+      <p>{t('cleanup.detail.deleteConfirmation', { path })}</p>
       <ControlledNextUIFormWrapper
         control={control}
         name="keepOriginalDirectories"

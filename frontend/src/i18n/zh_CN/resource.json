@@ -62,7 +62,7 @@
       "deleteSelected": "删除选中的 {{ cnt }} 个文件",
       "deleting": "正在删除",
       "deleteDialogTitle": "删除文件",
-      "deleteConfirmation": "确定删除选中的 {{ count }} 个文件或目录吗？此操作无法撤销。",
+      "deleteConfirmation": "确定删除 {{ path }} 吗？此操作无法撤销。",
       "keepOriginalDirectories": "保留原始目录",
       "deleteFailed": "删除失败",
       "deleteFailuresTitle": "部分文件删除失败",
@@ -107,7 +107,9 @@
       "startMigrate": "开始迁移",
       "migrating": "正在迁移...",
       "migrateRetryStep": "重试第 {{ step }} 步",
-      "backToRecords": "返回清理记录"
+      "backToRecords": "返回清理记录",
+      "deleteSuccess": "删除成功",
+      "deleteSuccessMsg": "已删除 {{ path }}"
     }
   },
   "migration": {

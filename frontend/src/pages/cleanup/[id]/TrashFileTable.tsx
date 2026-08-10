@@ -1,15 +1,13 @@
 import {
   Button,
   Card,
-  Checkbox,
   Chip,
   Dropdown,
   Label,
   Table,
   Tooltip,
 } from '@heroui/react'
-import type { Selection } from '@heroui/react'
-import { EllipsisVertical, LoaderCircle, Trash2 } from 'lucide-react'
+import { EllipsisVertical, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { cleaningrecord } from '../../../../wailsjs/go/models'
 import { OpenTrashFileDirectory } from '../../../../wailsjs/go/main/App'
@@ -23,9 +21,7 @@ type TrashFileTableProps = {
   files: cleaningrecord.TrashFile[]
   isDeleting: boolean
   rootPath: string
-  onDelete: (paths?: string[]) => void
-  onSelectionChange: (keys: Selection) => void
-  selectedPaths: Set<string>
+  onDelete: (paths: string) => void
 }
 
 export default function TrashFileTable({
@@ -33,8 +29,6 @@ export default function TrashFileTable({
   isDeleting,
   rootPath,
   onDelete,
-  onSelectionChange,
-  selectedPaths,
 }: TrashFileTableProps) {
   const { t } = useTranslation()
   const [migrationTarget, setMigrationTarget] = useState<{
@@ -77,7 +71,7 @@ export default function TrashFileTable({
           })
           break
         case 'delete-file':
-          onDelete([file.path])
+          onDelete(file.path)
           break
       }
     } catch (reason) {
@@ -94,55 +88,18 @@ export default function TrashFileTable({
             {t('cleanup.detail.cleanableFilesDesc')}
           </Card.Description>
         </div>
-        <Button
-          className="gap-2 rounded-xl"
-          isDisabled={selectedPaths.size === 0 || isDeleting}
-          variant="danger"
-          onPress={() => onDelete()}
-        >
-          {isDeleting ? (
-            <LoaderCircle
-              aria-hidden="true"
-              className="animate-spin"
-              size={15}
-            />
-          ) : (
-            <Trash2 aria-hidden="true" size={15} />
-          )}
-          {isDeleting
-            ? t('cleanup.detail.deleting')
-            : t('cleanup.detail.deleteSelected', { cnt: selectedPaths.size })}
-        </Button>
       </Card.Header>
       <Card.Content>
         <Table variant="secondary">
           <Table.ScrollContainer>
-            <Table.Content
-              aria-label="可清理文件列表"
-              selectedKeys={selectedPaths}
-              selectionMode={'multiple'}
-              onSelectionChange={onSelectionChange}
-            >
+            <Table.Content aria-label="可清理文件列表">
               <Table.Header>
-                <Table.Column className="pr-0">
-                  <Checkbox
-                    aria-label="Select all"
-                    isDisabled={files.every((file) => file.isDeleted)}
-                    slot="selection"
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                    </Checkbox.Content>
-                  </Checkbox>
-                </Table.Column>
+                <Table.Column>{t('common.actions')}</Table.Column>
                 <Table.Column isRowHeader>{t('common.name')}</Table.Column>
                 <Table.Column>{t('common.path')}</Table.Column>
                 <Table.Column>{t('common.category')}</Table.Column>
                 <Table.Column id="size">{t('common.size')}</Table.Column>
                 <Table.Column>{t('cleanup.detail.reason')}</Table.Column>
-                <Table.Column>{t('common.actions')}</Table.Column>
               </Table.Header>
               <Table.Body>
                 {sortedFiles.map((file) => (
@@ -151,55 +108,13 @@ export default function TrashFileTable({
                     id={file.path}
                     className={file.isDeleted ? 'line-through' : undefined}
                   >
-                    <Table.Cell className="pr-0">
-                      <Checkbox
-                        aria-label={`Select ${file.path}`}
-                        isDisabled={file.isDeleted}
-                        slot="selection"
-                        variant="secondary"
-                      >
-                        <Checkbox.Content>
-                          <Checkbox.Control>
-                            <Checkbox.Indicator />
-                          </Checkbox.Control>
-                        </Checkbox.Content>
-                      </Checkbox>
-                    </Table.Cell>
-                    <Table.Cell>{file.name}</Table.Cell>
-                    <Table.Cell>
-                      <Tooltip delay={0}>
-                        <Tooltip.Trigger className="text-muted block max-w-82 truncate">
-                          {file.path}
-                        </Tooltip.Trigger>
-                        <Tooltip.Content>
-                          <Tooltip.Arrow />
-                          {file.path}
-                        </Tooltip.Content>
-                      </Tooltip>
-                    </Table.Cell>
-                    <Table.Cell>
-                      <Chip color={levelColor(file.level)} variant="soft">
-                        {levelLabel(file.level)}
-                      </Chip>
-                    </Table.Cell>
-                    <Table.Cell>{formatBytes(file.size ?? 0)}</Table.Cell>
-                    <Table.Cell>
-                      <Tooltip delay={0}>
-                        <Tooltip.Trigger className="text-muted block max-w-72 truncate">
-                          {file.reason}
-                        </Tooltip.Trigger>
-                        <Tooltip.Content>
-                          <Tooltip.Arrow />
-                          {file.reason}
-                        </Tooltip.Content>
-                      </Tooltip>
-                    </Table.Cell>
                     <Table.Cell>
                       <Dropdown>
                         <Button
                           isIconOnly
                           aria-label={`打开 ${file.name} 的操作菜单`}
                           variant="ghost"
+                          size="sm"
                         >
                           <EllipsisVertical size={16} />
                         </Button>
@@ -239,6 +154,44 @@ export default function TrashFileTable({
                           </Dropdown.Menu>
                         </Dropdown.Popover>
                       </Dropdown>
+                      <Button
+                        onPress={() => onDelete(file.path)}
+                        isIconOnly
+                        size="sm"
+                        variant="ghost"
+                        className="text-danger"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </Table.Cell>
+                    <Table.Cell>{file.name}</Table.Cell>
+                    <Table.Cell>
+                      <Tooltip delay={0}>
+                        <Tooltip.Trigger className="text-muted block max-w-82 truncate">
+                          {file.path}
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>
+                          <Tooltip.Arrow />
+                          {file.path}
+                        </Tooltip.Content>
+                      </Tooltip>
+                    </Table.Cell>
+                    <Table.Cell>
+                      <Chip color={levelColor(file.level)} variant="soft">
+                        {levelLabel(file.level)}
+                      </Chip>
+                    </Table.Cell>
+                    <Table.Cell>{formatBytes(file.size ?? 0)}</Table.Cell>
+                    <Table.Cell>
+                      <Tooltip delay={0}>
+                        <Tooltip.Trigger className="text-muted block max-w-72 truncate">
+                          {file.reason}
+                        </Tooltip.Trigger>
+                        <Tooltip.Content>
+                          <Tooltip.Arrow />
+                          {file.reason}
+                        </Tooltip.Content>
+                      </Tooltip>
                     </Table.Cell>
                   </Table.Row>
                 ))}
