@@ -168,7 +168,8 @@
       "confirm": "确认测试",
       "success": "连接测试成功",
       "successDescription": "LLM 已正常返回响应",
-      "failed": "连接测试失败"
+      "failed": "连接测试失败",
+      "thinkingModeEnabled": "您已开启思考模式(或者模型默认开启)，建议将其关闭，思考模式会严重拖慢分析速度，可能还会导致超时!"
     },
     "maxTokenInOneConversation": "每次清理 Token 消耗上限，建议在 600000 到 1000000 之间",
     "autoContextCompress": {

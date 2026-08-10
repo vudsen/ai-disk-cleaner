@@ -5,6 +5,7 @@ import {cleaner} from '../models';
 import {model} from '../models';
 import {cleaningrecord} from '../models';
 import {setting} from '../models';
+import {analyzer} from '../models';
 
 export function CopyMigrationSource(arg1:string,arg2:string,arg3:string):Promise<string>;
 
@@ -44,4 +45,4 @@ export function StartCleaning(arg1:string,arg2:string,arg3:string):Promise<clean
 
 export function StopCleaning(arg1:number):Promise<void>;
 
-export function TestLLMConnection(arg1:Array<setting.Setting>):Promise<void>;
+export function TestLLMConnection(arg1:Array<setting.Setting>):Promise<analyzer.TestConnectionResult>;

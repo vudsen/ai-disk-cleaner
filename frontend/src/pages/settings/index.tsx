@@ -165,7 +165,21 @@ export default function SettingsPage() {
     }
 
     try {
-      await TestLLMConnection(settingsFromValues(getValues()))
+      const result = await TestLLMConnection(settingsFromValues(getValues()))
+      console.log(result.type)
+      console.log(result.type === 'warning')
+      if (result.type === 'warning') {
+        setTimeout(() => {
+          showDialog({
+            title: 'Warning',
+            message: t(result.i18nMessage),
+            confirmBtnText: t('common.confirm'),
+            color: 'warning',
+            hideCancel: true,
+          })
+        }, 100)
+        return
+      }
       toast(t('settings.testConnection.success'), {
         description: t('settings.testConnection.successDescription'),
         variant: 'success',

@@ -168,7 +168,8 @@
       "confirm": "Run Test",
       "success": "Connection Test Succeeded",
       "successDescription": "The LLM returned a response successfully",
-      "failed": "Connection Test Failed"
+      "failed": "Connection Test Failed",
+      "thinkingModeEnabled": "You have enabled Thinking Mode. We recommend turning it off, as it will significantly slow down the analysis process and may even cause timeouts!"
     },
     "maxTokenInOneConversation": "Max token in conversation, it is recommended to use between 500,000 and 1,000,000.",
 

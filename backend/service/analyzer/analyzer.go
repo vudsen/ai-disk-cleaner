@@ -5,6 +5,7 @@ import (
 	"ai-disk-cleanner/backend/data/models/setting"
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -14,6 +15,12 @@ import (
 // Service implements the LLM analysis service with an OpenAI-compatible API.
 type Service struct {
 	settings settingStore
+}
+
+// TestConnectionResult describes the outcome of an LLM connection test.
+type TestConnectionResult struct {
+	Type        string `json:"type"`
+	I18nMessage string `json:"i18nMessage"`
 }
 
 // NewService creates the analyzer service for the central service manager.
@@ -58,10 +65,10 @@ func (analyzer *Service) Analyze(
 }
 
 // TestConnection sends a minimal request using the supplied, potentially unsaved settings.
-func (analyzer *Service) TestConnection(ctx context.Context, settings []setting.Setting) error {
+func (analyzer *Service) TestConnection(ctx context.Context, settings []setting.Setting) (TestConnectionResult, error) {
 	config, err := parseLLMConfig(settings)
 	if err != nil {
-		return err
+		return TestConnectionResult{}, err
 	}
 
 	params := openai.ChatCompletionNewParams{
@@ -82,8 +89,24 @@ func (analyzer *Service) TestConnection(ctx context.Context, settings []setting.
 	params.SetExtraFields(extraFields)
 
 	client := newOpenAIClient(config)
-	if _, err := client.Chat.Completions.New(ctx, params); err != nil {
-		return fmt.Errorf("test LLM connection: %w", err)
+	completion, err := client.Chat.Completions.New(ctx, params)
+	if err != nil {
+		return TestConnectionResult{}, fmt.Errorf("test LLM connection: %w", err)
 	}
-	return nil
+	message := make(map[string]any, 0)
+	err = json.Unmarshal([]byte(completion.Choices[0].Message.RawJSON()), &message)
+	if err != nil {
+		return TestConnectionResult{}, err
+	}
+	_, ok := message["reasoning_content"]
+	if ok {
+		return TestConnectionResult{
+			Type:        "warning",
+			I18nMessage: "settings.testConnection.thinkingModeEnabled",
+		}, nil
+	}
+	return TestConnectionResult{
+		Type:        "success",
+		I18nMessage: "",
+	}, nil
 }

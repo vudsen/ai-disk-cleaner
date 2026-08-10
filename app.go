@@ -15,6 +15,7 @@ import (
 	"ai-disk-cleanner/backend/data/models/migration"
 	"ai-disk-cleanner/backend/data/models/setting"
 	"ai-disk-cleanner/backend/service"
+	"ai-disk-cleanner/backend/service/analyzer"
 	"ai-disk-cleanner/backend/service/cleaner"
 
 	"github.com/pkg/browser"
@@ -194,9 +195,9 @@ func (a *App) SaveSettings(settings []setting.Setting) error {
 	return service.GetSettingService().Save(settings)
 }
 
-func (a *App) TestLLMConnection(settings []setting.Setting) error {
+func (a *App) TestLLMConnection(settings []setting.Setting) (analyzer.TestConnectionResult, error) {
 	if err := a.ready(); err != nil {
-		return err
+		return analyzer.TestConnectionResult{}, err
 	}
 	return service.GetAnalyzerService().TestConnection(a.ctx, settings)
 }
