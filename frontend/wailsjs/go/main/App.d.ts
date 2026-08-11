@@ -41,7 +41,7 @@ export function SelectDirectory():Promise<string>;
 
 export function SelectMigrationDirectory():Promise<string>;
 
-export function StartCleaning(arg1:string,arg2:string,arg3:string):Promise<cleaner.CleaningTaskSnapshot>;
+export function StartCleaning(arg1:string,arg2:string):Promise<cleaner.CleaningTaskSnapshot>;
 
 export function StopCleaning(arg1:number):Promise<void>;
 

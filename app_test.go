@@ -31,7 +31,7 @@ func TestLLMAnalysisFindsExpectedTrashFiles(t *testing.T) {
 	})
 	initializeLLMFromEnvironment(t, app)
 
-	task, err := app.StartCleaning(fixturePath, "zh_CN", "deep")
+	task, err := app.StartCleaning(fixturePath, "zh_CN")
 	if err != nil {
 		t.Fatalf("start cleaning: %v", err)
 	}

@@ -36,7 +36,6 @@ func (analyzer *Service) Analyze(
 	ctx context.Context,
 	tree *modelscanner.FileTree,
 	language string,
-	scanMode string,
 	onDelta func(string),
 ) (*cleaningrecord.AnalysisResult, error) {
 	if tree == nil {
@@ -49,10 +48,7 @@ func (analyzer *Service) Analyze(
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := systemPromptForMode(scanMode, config.autoContextCompressEnabled)
-	if err != nil {
-		return nil, err
-	}
+	prompt := buildBaseSystemPrompt(config.autoContextCompressEnabled)
 	agent, err := newAgent(ctx, tree, prompt, onDelta, config, language)
 	if err != nil {
 		return nil, err

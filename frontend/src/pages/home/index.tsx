@@ -1,10 +1,8 @@
 import {
   Alert,
   Button,
-  ButtonGroup,
   Card,
   Chip,
-  Dropdown,
   Link,
   ListBox,
   ProgressBar,
@@ -13,7 +11,6 @@ import {
 import {
   ArrowUpRight,
   CheckCircle2,
-  ChevronDown,
   Clock3,
   FolderOpen,
   HardDrive,
@@ -48,8 +45,6 @@ type ScanValues = {
   directory: string
 }
 
-type ScanMode = 'fast' | 'deep'
-
 const hasWailsRuntime = () =>
   typeof window !== 'undefined' && 'go' in window && 'runtime' in window
 
@@ -75,7 +70,6 @@ export default function HomePage() {
   const [isCheckingLLM, setIsCheckingLLM] = useState(false)
   const [isLLMConfigured, setIsLLMConfigured] = useState<boolean | null>(null)
   const [isStarting, setIsStarting] = useState(false)
-  const [scanMode, setScanMode] = useState<ScanMode>('fast')
   const [startError, setStartError] = useState('')
   const [disks, setDisks] = useState<model.DiskInfo[]>([])
   const [diskError, setDiskError] = useState('')
@@ -212,7 +206,6 @@ export default function HomePage() {
       const snapshot = await StartCleaning(
         path,
         i18n.resolvedLanguage ?? i18n.language,
-        scanMode,
       )
       navigate(`/cleanup/${snapshot.id}`)
     } catch (reason) {
@@ -331,71 +324,27 @@ export default function HomePage() {
               </ControlledNextUIFormWrapper>
             </div>
 
-            <ButtonGroup
-              className="mb-1 h-12 shrink-0 rounded-xl"
+            <Button
+              className="mb-1 h-12 shrink-0 gap-2 rounded-xl px-6"
               isDisabled={isTaskRunning || isStarting || isCheckingLLM}
               variant="primary"
+              onPress={() => void handleStartCleaning()}
             >
-              <Button
-                className="h-12 gap-2 rounded-l-xl rounded-r-none px-6"
-                onPress={() => void handleStartCleaning()}
-              >
-                {isStarting || isCheckingLLM ? (
-                  <LoaderCircle
-                    aria-hidden="true"
-                    className="animate-spin"
-                    size={18}
-                  />
-                ) : (
-                  <ScanSearch aria-hidden="true" size={18} strokeWidth={1.9} />
-                )}
-                {isCheckingLLM
-                  ? t('home.checkingLLMConfiguration')
-                  : isStarting
-                    ? t('home.creatingTask')
-                    : t(`home.${scanMode}Scan`)}
-              </Button>
-              <Dropdown>
-                <Button
-                  isIconOnly
-                  aria-label={t('home.selectScanMode')}
-                  className="h-12 min-w-10 rounded-l-none rounded-r-xl px-0"
-                  isDisabled={isTaskRunning || isStarting || isCheckingLLM}
-                  variant="primary"
-                >
-                  <ChevronDown aria-hidden="true" size={16} strokeWidth={2} />
-                </Button>
-                <Dropdown.Popover placement="bottom end">
-                  <Dropdown.Menu
-                    aria-label={t('home.selectScanMode')}
-                    selectionMode="single"
-                    selectedKeys={new Set([scanMode])}
-                    onAction={(key) => setScanMode(key as ScanMode)}
-                  >
-                    <Dropdown.Item id="fast" textValue={t('home.fastScan')}>
-                      <div>
-                        <p className="text-sm font-medium">
-                          {t('home.fastScan')}
-                        </p>
-                        <p className="text-muted text-xs">
-                          {t('home.fastScanDescription')}
-                        </p>
-                      </div>
-                    </Dropdown.Item>
-                    <Dropdown.Item id="deep" textValue={t('home.deepScan')}>
-                      <div>
-                        <p className="text-sm font-medium">
-                          {t('home.deepScan')}
-                        </p>
-                        <p className="text-muted text-xs">
-                          {t('home.deepScanDescription')}
-                        </p>
-                      </div>
-                    </Dropdown.Item>
-                  </Dropdown.Menu>
-                </Dropdown.Popover>
-              </Dropdown>
-            </ButtonGroup>
+              {isStarting || isCheckingLLM ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="animate-spin"
+                  size={18}
+                />
+              ) : (
+                <ScanSearch aria-hidden="true" size={18} strokeWidth={1.9} />
+              )}
+              {isCheckingLLM
+                ? t('home.checkingLLMConfiguration')
+                : isStarting
+                  ? t('home.creatingTask')
+                  : t('home.fastScan')}
+            </Button>
           </div>
 
           {scanTarget === 'directory' && (

@@ -2,33 +2,20 @@ package analyzer
 
 import (
 	_ "embed"
-	"fmt"
 	"strings"
 )
 
-//go:embed SYSTEM.md
-var systemPrompt string
-
 //go:embed SYSTEM_FAST.md
-var fastSystemPrompt string
+var systemPrompt string
 
 //go:embed CONTEXT_COMPRESS_RULE_SUFFIX.md
 var contextCompressRuleSuffix string
 
-func systemPromptForMode(scanMode string, autoContextCompressEnabled bool) (string, error) {
+func buildBaseSystemPrompt(autoContextCompressEnabled bool) string {
 	builder := strings.Builder{}
-	switch scanMode {
-	case "fast":
-		builder.WriteString(fastSystemPrompt)
-		break
-	case "deep":
-		builder.WriteString(systemPrompt)
-		break
-	default:
-		return "", fmt.Errorf("analyze disk: unsupported scan mode %q", scanMode)
-	}
+	builder.WriteString(systemPrompt)
 	if autoContextCompressEnabled {
 		builder.WriteString(contextCompressRuleSuffix)
 	}
-	return builder.String(), nil
+	return builder.String()
 }

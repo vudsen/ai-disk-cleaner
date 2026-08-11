@@ -34,7 +34,6 @@ type Analyzer interface {
 		ctx context.Context,
 		tree *modelscanner.FileTree,
 		language string,
-		scanMode string,
 		onDelta func(string),
 	) (*cleaningrecord.AnalysisResult, error)
 }
@@ -135,15 +134,12 @@ func newServiceWithScanner(
 }
 
 // StartCleaning creates the record synchronously and starts the expensive work in the background.
-func (service *Service) StartCleaning(directoryPath string, language string, scanMode string) (*CleaningTaskSnapshot, error) {
+func (service *Service) StartCleaning(directoryPath string, language string) (*CleaningTaskSnapshot, error) {
 	if service.store == nil {
 		return nil, errors.New("start cleaning: record store is nil")
 	}
 	if service.analyzer == nil {
 		return nil, errors.New("start cleaning: analyzer is nil")
-	}
-	if scanMode != "fast" && scanMode != "deep" {
-		return nil, fmt.Errorf("start cleaning: unsupported scan mode %q", scanMode)
 	}
 	absolutePath, err := validateDirectory(directoryPath)
 	if err != nil {
@@ -180,7 +176,6 @@ func (service *Service) StartCleaning(directoryPath string, language string, sca
 		cancel:   cancel,
 		done:     make(chan struct{}),
 		language: language,
-		scanMode: scanMode,
 	}
 	service.active = task
 	service.tree = nil

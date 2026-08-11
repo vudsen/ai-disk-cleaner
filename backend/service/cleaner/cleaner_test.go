@@ -38,17 +38,16 @@ func newTestStore(t *testing.T) *cleaningrecord.Store {
 }
 
 type fakeAnalyzer struct {
-	analyze func(context.Context, *modelscanner.FileTree, string, string, func(string)) (*cleaningrecord.AnalysisResult, error)
+	analyze func(context.Context, *modelscanner.FileTree, string, func(string)) (*cleaningrecord.AnalysisResult, error)
 }
 
 func (analyzer fakeAnalyzer) Analyze(
 	ctx context.Context,
 	tree *modelscanner.FileTree,
 	language string,
-	scanMode string,
 	onDelta func(string),
 ) (*cleaningrecord.AnalysisResult, error) {
-	return analyzer.analyze(ctx, tree, language, scanMode, onDelta)
+	return analyzer.analyze(ctx, tree, language, onDelta)
 }
 
 func TestServiceRunsTaskAndPersistsResult(t *testing.T) {
@@ -62,14 +61,10 @@ func TestServiceRunsTaskAndPersistsResult(t *testing.T) {
 			_ context.Context,
 			_ *modelscanner.FileTree,
 			language string,
-			scanMode string,
 			onDelta func(string),
 		) (*cleaningrecord.AnalysisResult, error) {
 			if language != "zh_CN" {
 				t.Errorf("language = %q, want zh_CN", language)
-			}
-			if scanMode != "fast" {
-				t.Errorf("scanMode = %q, want fast", scanMode)
 			}
 			onDelta("分析完成")
 			return &cleaningrecord.AnalysisResult{LLMOutput: "分析完成", TokenUsage: 12}, nil
@@ -93,7 +88,7 @@ func TestServiceRunsTaskAndPersistsResult(t *testing.T) {
 		},
 	)
 
-	snapshot, err := service.StartCleaning(t.TempDir(), "zh_CN", "fast")
+	snapshot, err := service.StartCleaning(t.TempDir(), "zh_CN")
 	if err != nil {
 		t.Fatalf("StartCleaning() error = %v", err)
 	}
@@ -145,7 +140,6 @@ func TestServiceRejectsConcurrentTaskAndCancelsScan(t *testing.T) {
 			context.Context,
 			*modelscanner.FileTree,
 			string,
-			string,
 			func(string),
 		) (*cleaningrecord.AnalysisResult, error) {
 			t.Fatal("analyzer must not run after scan cancellation")
@@ -163,12 +157,12 @@ func TestServiceRejectsConcurrentTaskAndCancelsScan(t *testing.T) {
 		},
 	)
 
-	first, err := service.StartCleaning(t.TempDir(), "en", "fast")
+	first, err := service.StartCleaning(t.TempDir(), "en")
 	if err != nil {
 		t.Fatalf("first StartCleaning() error = %v", err)
 	}
 	<-scanStarted
-	if _, err := service.StartCleaning(t.TempDir(), "en", "fast"); !errors.Is(err, ErrTaskRunning) {
+	if _, err := service.StartCleaning(t.TempDir(), "en"); !errors.Is(err, ErrTaskRunning) {
 		t.Fatalf("second StartCleaning() error = %v, want ErrTaskRunning", err)
 	}
 	if err := service.StopCleaning(first.ID); err != nil {
@@ -204,7 +198,6 @@ func TestServiceRetainsFailedAnalysisSnapshotWhileTreeExists(t *testing.T) {
 			_ context.Context,
 			_ *modelscanner.FileTree,
 			_ string,
-			_ string,
 			onDelta func(string),
 		) (*cleaningrecord.AnalysisResult, error) {
 			onDelta("部分分析结果")
@@ -228,7 +221,7 @@ func TestServiceRetainsFailedAnalysisSnapshotWhileTreeExists(t *testing.T) {
 		},
 	)
 
-	if _, err := service.StartCleaning(t.TempDir(), "en", "deep"); err != nil {
+	if _, err := service.StartCleaning(t.TempDir(), "en"); err != nil {
 		t.Fatalf("StartCleaning() error = %v", err)
 	}
 	select {

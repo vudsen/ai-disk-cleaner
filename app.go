@@ -92,11 +92,11 @@ func (a *App) OpenTrashFileDirectory(path string) error {
 	return browser.OpenFile(filepath.Dir(target))
 }
 
-func (a *App) StartCleaning(path string, language string, scanMode string) (*cleaner.CleaningTaskSnapshot, error) {
+func (a *App) StartCleaning(path string, language string) (*cleaner.CleaningTaskSnapshot, error) {
 	if err := a.ready(); err != nil {
 		return nil, err
 	}
-	return service.GetCleanerService().StartCleaning(path, language, scanMode)
+	return service.GetCleanerService().StartCleaning(path, language)
 }
 
 func (a *App) StopCleaning(recordID int64) error {
