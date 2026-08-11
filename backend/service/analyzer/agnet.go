@@ -151,7 +151,7 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 			return nil, err
 		}
 		if len(completion.Choices) == 0 {
-			return nil, errors.New("analyze disk: LLM returned no choices")
+			return nil, errors.New("LLM returned no choices: " + completion.RawJSON())
 		}
 
 		message := completion.Choices[0].Message
