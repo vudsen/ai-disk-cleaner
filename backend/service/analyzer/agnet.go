@@ -83,7 +83,8 @@ func (agent *Agent) beforeCompletions() error {
 		// 自动压缩模式下，状态在每次压缩后切换
 		return nil
 	}
-	if shouldSwitchToAgentHighState(agent) {
+	// 工具拒绝思考 + 输出总结 + 汇总 + ? + 保险
+	if agent.usedTokens+agent.totalTokens*5 >= agent.config.maxTokens {
 		agent.state = agentStateHigh
 	}
 	return nil

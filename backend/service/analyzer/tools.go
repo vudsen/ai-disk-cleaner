@@ -271,7 +271,7 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	if shouldCompress(agent) {
 		return "", errors.New("该工具已被禁用，请使用 `compress_context` 工具来压缩上下文，")
 	} else if agent.state == agentStateHigh {
-		return "", errors.New("上下文即将超出限制，该工具已被禁用，立即停止扫描并进行总结")
+		return "", errors.New("上下文即将超出限制，该工具已被禁用，立即进行总结并**一次性**调用所有 `add_trash_file` 来添加垃圾，禁止分多次调用")
 	}
 	var args analyzeDirectoryParameters
 	if err := json.Unmarshal([]byte(parameter), &args); err != nil {
