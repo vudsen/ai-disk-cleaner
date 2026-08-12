@@ -29,24 +29,23 @@ const (
 )
 
 type Agent struct {
-	ctx              context.Context
-	tree             *modelscanner.FileTree
-	baseSystemPrompt string
-	onDelta          func(string)
-	config           *llmConfig
-	language         string
-	state            agentContextState
-	usedTokens       int64
-	totalTokens      int64
-	messages         []openai.ChatCompletionMessageParamUnion
-	TrashFiles       []cleaningrecord.TrashFile
-	TopUsages        []cleaningrecord.DiskUsage
+	ctx         context.Context
+	tree        *modelscanner.FileTree
+	onDelta     func(string)
+	config      *llmConfig
+	language    string
+	state       agentContextState
+	usedTokens  int64
+	totalTokens int64
+	messages    []openai.ChatCompletionMessageParamUnion
+	TrashFiles  []cleaningrecord.TrashFile
+	TopUsages   []cleaningrecord.DiskUsage
 }
 
 func newAgent(
 	ctx context.Context,
 	tree *modelscanner.FileTree,
-	baseSystemPrompt string,
+	systemPrompt string,
 	onDelta func(string),
 	config *llmConfig,
 	language string,
@@ -58,16 +57,15 @@ func newAgent(
 		return nil, errors.New("analyze disk: file tree is nil")
 	}
 	return &Agent{
-		ctx:              ctx,
-		tree:             tree,
-		baseSystemPrompt: baseSystemPrompt,
-		onDelta:          onDelta,
-		config:           config,
-		language:         language,
-		state:            agentContextStateLow,
-		usedTokens:       0,
+		ctx:        ctx,
+		tree:       tree,
+		onDelta:    onDelta,
+		config:     config,
+		language:   language,
+		state:      agentContextStateLow,
+		usedTokens: 0,
 		messages: []openai.ChatCompletionMessageParamUnion{
-			openai.SystemMessage(baseSystemPrompt),
+			openai.SystemMessage(systemPrompt),
 			openai.UserMessage(i18n.AnalyzerUserPrompt(language)),
 		},
 		TrashFiles: make([]cleaningrecord.TrashFile, 0),
@@ -99,17 +97,6 @@ func shouldCompress(agent *Agent) bool {
 
 func (agent *Agent) afterCompletions() {}
 
-func (agent *Agent) buildSystemPrompt() openai.ChatCompletionMessageParamUnion {
-	builder := strings.Builder{}
-	builder.WriteString(agent.baseSystemPrompt)
-	if shouldCompress(agent) {
-		builder.WriteString("<should_compress>true</should_compress>")
-	} else {
-		builder.WriteString("<should_compress>false</should_compress>")
-	}
-	return openai.SystemMessage(builder.String())
-}
-
 func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 	client := newOpenAIClient(agent.config)
 
@@ -135,7 +122,6 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 			params.SetExtraFields(extraFields)
 		}
 
-		agent.messages[0] = agent.buildSystemPrompt()
 		err := agent.beforeCompletions()
 		if err != nil {
 			return nil, err

@@ -383,7 +383,7 @@ func (tool *compressContextTool) Description() string {
 }
 
 func (tool *compressContextTool) IsSupport(agent *Agent) bool {
-	return agent.state != agentStateHigh
+	return agent.state != agentStateHigh && agent.config.autoContextCompressEnabled
 }
 
 func (tool *compressContextTool) invoke(agent *Agent, parameter string) (string, error) {
