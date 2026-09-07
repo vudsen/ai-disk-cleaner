@@ -1,13 +1,13 @@
 export namespace analyzer {
-
+	
 	export class TestConnectionResult {
 	    type: string;
 	    i18nMessage: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new TestConnectionResult(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.type = source["type"];
