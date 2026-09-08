@@ -7,6 +7,7 @@ import (
 
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
+	"ai-disk-cleanner/backend/service/tasklog"
 )
 
 type activeTask struct {
@@ -15,13 +16,17 @@ type activeTask struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	language string
+	log      *tasklog.Session
+	logError string
 }
 
 func (service *Service) run(task *activeTask) {
+	defer task.log.Close()
 	tree, err := service.scan(task.ctx, task.snapshot.Path, func(progress modelscanner.ScanProgress) {
 		service.updateScanProgress(task, progress)
 	})
 	if err != nil {
+		task.logError = "扫描阶段：" + tasklog.ErrorSummary(err)
 		service.finishFromError(task, err)
 		return
 	}
@@ -30,12 +35,14 @@ func (service *Service) run(task *activeTask) {
 		return
 	}
 
+	task.log.Event("扫描完成", "占用=%.2f GiB 字节数=%d 条目数=%d", float64(tree.Root.DiskSize)/(1<<30), tree.Root.DiskSize, tree.Root.ItemCount)
 	if err := service.store.UpdateCleaningRecordState(
 		service.ctx,
 		task.snapshot.ID,
 		cleaningrecord.CLEANING_STATE_ANALYZING,
 		"",
 	); err != nil {
+		task.logError = "分析状态保存失败：" + tasklog.ErrorSummary(err)
 		service.finish(task, cleaningrecord.CLEANING_STATE_ERROR, err.Error(), false)
 		return
 	}
@@ -62,8 +69,9 @@ func (service *Service) run(task *activeTask) {
 
 	result, err := service.analyzer.Analyze(task.ctx, tree, task.language, func(delta string) {
 		service.appendLLMDelta(task, delta)
-	})
+	}, task.log)
 	if err != nil {
+		task.logError = "分析阶段：" + tasklog.ErrorSummary(err)
 		service.finishFromError(task, err)
 		return
 	}
@@ -80,6 +88,7 @@ func (service *Service) run(task *activeTask) {
 	err = service.store.CompleteCleaningRecord(operationContext, task.snapshot.ID, result)
 	cancel()
 	if err != nil {
+		task.logError = "分析结果保存失败：" + tasklog.ErrorSummary(err)
 		service.finish(task, cleaningrecord.CLEANING_STATE_ERROR, err.Error(), false)
 		return
 	}
@@ -120,6 +129,9 @@ func (service *Service) appendLLMDelta(task *activeTask, delta string) {
 }
 
 func (service *Service) finishFromError(task *activeTask, err error) {
+	if task.logError == "" {
+		task.logError = tasklog.ErrorSummary(err)
+	}
 	if errors.Is(err, context.Canceled) || errors.Is(task.ctx.Err(), context.Canceled) {
 		service.finish(task, cleaningrecord.CLEANING_STATE_CANCELLED, "", false)
 		return
@@ -142,11 +154,21 @@ func (service *Service) finish(
 			errorMessage,
 		)
 		cancel()
+		if persistErr != nil {
+			task.log.Event("状态保存失败", "%s", tasklog.ErrorSummary(persistErr))
+		}
 		if persistErr != nil && errorMessage == "" {
 			errorMessage = persistErr.Error()
+			if task.logError == "" {
+				task.logError = "状态保存失败：" + tasklog.ErrorSummary(persistErr)
+			}
 		}
 	}
 
+	if task.logError == "" && errorMessage != "" {
+		task.logError = errorMessage
+	}
+	task.log.Finish(logState(state), task.logError)
 	service.mu.Lock()
 	if service.active != task {
 		service.mu.Unlock()

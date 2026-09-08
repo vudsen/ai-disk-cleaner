@@ -86,6 +86,12 @@ type debugTransport struct {
 	rt http.RoundTripper
 }
 
+type invalidResponseError struct {
+	status      int
+	contentType string
+	body        string
+}
+
 func truncate(s string, max int) string {
 	runes := []rune(s)
 	if len(runes) <= max {
@@ -107,12 +113,7 @@ func (t debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 
-		return nil, fmt.Errorf(
-			"invalid LLM response: status=%d content-type=%s body=%s",
-			resp.StatusCode,
-			contentType,
-			truncate(string(body), 1024),
-		)
+		return nil, &invalidResponseError{status: resp.StatusCode, contentType: contentType, body: truncate(string(body), 1024)}
 	}
 
 	return resp, nil

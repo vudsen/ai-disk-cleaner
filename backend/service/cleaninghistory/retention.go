@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	settingmodel "ai-disk-cleanner/backend/data/models/setting"
 )
 
@@ -14,7 +15,8 @@ const recordMaxCountKey = "record.max.count"
 type store interface {
 	ListSettings(context.Context) ([]settingmodel.Setting, error)
 	MarkInterruptedCleaningRecords(context.Context) error
-	DeleteOldCleaningRecords(context.Context, int) error
+	ListOldCleaningRecords(context.Context, int) ([]cleaningrecord.CleaningRecord, error)
+	DeleteCleaningRecordsByIDs(context.Context, []int64) error
 }
 
 func (service *Service) recordMaxCount() (int, error) {

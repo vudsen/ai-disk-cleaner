@@ -10,6 +10,7 @@ import (
 
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
+	"ai-disk-cleanner/backend/service/tasklog"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -46,6 +47,7 @@ func (analyzer fakeAnalyzer) Analyze(
 	tree *modelscanner.FileTree,
 	language string,
 	onDelta func(string),
+	_ *tasklog.Session,
 ) (*cleaningrecord.AnalysisResult, error) {
 	return analyzer.analyze(ctx, tree, language, onDelta)
 }
@@ -88,6 +90,8 @@ func TestServiceRunsTaskAndPersistsResult(t *testing.T) {
 		},
 	)
 
+	// An unavailable log path must not prevent scan, analysis or persistence.
+	service.logs = &tasklog.Service{}
 	snapshot, err := service.StartCleaning(t.TempDir(), "zh_CN")
 	if err != nil {
 		t.Fatalf("StartCleaning() error = %v", err)

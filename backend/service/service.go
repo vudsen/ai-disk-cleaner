@@ -11,6 +11,7 @@ import (
 	"ai-disk-cleanner/backend/service/migration"
 	"ai-disk-cleanner/backend/service/scanner"
 	"ai-disk-cleanner/backend/service/setting"
+	"ai-disk-cleanner/backend/service/tasklog"
 )
 
 var (
@@ -21,6 +22,7 @@ var (
 	migrationService        *migration.Service
 	scannerService          *scanner.Service
 	settingService          *setting.Service
+	taskLogService          *tasklog.Service
 	buildServices           = setupServices
 )
 
@@ -31,6 +33,7 @@ type services struct {
 	migration       *migration.Service
 	scanner         *scanner.Service
 	setting         *setting.Service
+	taskLog         *tasklog.Service
 }
 
 // Initialize creates every application service during Wails startup.
@@ -58,12 +61,14 @@ func setupServices() (services, error) {
 	newScannerService := scanner.NewService()
 	newSettingService := setting.NewService(store)
 	newAnalyzerService := analyzer.NewService(store)
-	newCleaningHistoryService := cleaninghistory.NewService(store)
+	newTaskLogService := tasklog.NewService()
+	newCleaningHistoryService := cleaninghistory.NewService(store, newTaskLogService)
 	newMigrationService := migration.NewService(store)
 	newCleanerService := cleaner.NewService(
 		store.Store,
 		newAnalyzerService,
 		newScannerService,
+		newTaskLogService,
 	)
 
 	if err := newCleaningHistoryService.CleanupOnStartup(); err != nil {
@@ -77,6 +82,7 @@ func setupServices() (services, error) {
 		migration:       newMigrationService,
 		scanner:         newScannerService,
 		setting:         newSettingService,
+		taskLog:         newTaskLogService,
 	}, nil
 }
 
@@ -84,6 +90,7 @@ func publishServices(created services) {
 	// Publish only after all construction and startup work has succeeded.
 	scannerService = created.scanner
 	settingService = created.setting
+	taskLogService = created.taskLog
 	analyzerService = created.analyzer
 	cleaningHistoryService = created.cleaningHistory
 	migrationService = created.migration
@@ -95,6 +102,13 @@ func GetAnalyzerService() *analyzer.Service {
 		panic("service manager: analyzer service is not initialized")
 	}
 	return analyzerService
+}
+
+func GetTaskLogService() *tasklog.Service {
+	if taskLogService == nil {
+		panic("task log service is not initialized")
+	}
+	return taskLogService
 }
 
 func GetCleanerService() *cleaner.Service {

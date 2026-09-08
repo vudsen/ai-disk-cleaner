@@ -4,6 +4,7 @@ import (
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	"ai-disk-cleanner/backend/data/models/setting"
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
+	"ai-disk-cleanner/backend/service/tasklog"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,6 +24,13 @@ type TestConnectionResult struct {
 	I18nMessage string `json:"i18nMessage"`
 }
 
+func (err *analysisError) Error() string      { return err.cause.Error() }
+func (err *analysisError) Unwrap() error      { return err.cause }
+func (err *analysisError) LogSummary() string { return err.summary }
+func (err *invalidResponseError) Error() string {
+	return fmt.Sprintf("invalid LLM response: status=%d content-type=%s body=%s", err.status, err.contentType, err.body)
+}
+
 // NewService creates the analyzer service for the central service manager.
 func NewService(settings settingStore) *Service {
 	return newService(settings)
@@ -37,6 +45,7 @@ func (analyzer *Service) Analyze(
 	tree *modelscanner.FileTree,
 	language string,
 	onDelta func(string),
+	session *tasklog.Session,
 ) (*cleaningrecord.AnalysisResult, error) {
 	if tree == nil {
 		return nil, errors.New("analyze disk: file tree is nil")
@@ -49,10 +58,12 @@ func (analyzer *Service) Analyze(
 		return nil, err
 	}
 	prompt := buildBaseSystemPrompt(config.autoContextCompressEnabled)
+	session.Event("分析开始", "模型=%s 语言=%s Token预算=%d 自动压缩=%t", config.model, language, config.maxTokens, config.autoContextCompressEnabled)
 	agent, err := newAgent(ctx, tree, prompt, onDelta, config, language)
 	if err != nil {
 		return nil, err
 	}
+	agent.log = session
 	run, err := agent.run()
 	if err != nil {
 		return nil, err

@@ -14,6 +14,7 @@ import (
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
 	serviceScanner "ai-disk-cleanner/backend/service/scanner"
+	"ai-disk-cleanner/backend/service/tasklog"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -35,6 +36,7 @@ type Analyzer interface {
 		tree *modelscanner.FileTree,
 		language string,
 		onDelta func(string),
+		session *tasklog.Session,
 	) (*cleaningrecord.AnalysisResult, error)
 }
 
@@ -77,6 +79,7 @@ type Service struct {
 	analyzer Analyzer
 	scan     ScanFunc
 	emit     EventEmitter
+	logs     *tasklog.Service
 
 	mu           sync.RWMutex
 	active       *activeTask
@@ -89,6 +92,7 @@ func NewService(
 	store *cleaningrecord.Store,
 	analyzer Analyzer,
 	scanner *serviceScanner.Service,
+	logs *tasklog.Service,
 ) *Service {
 	if scanner == nil {
 		panic("cleaner service: scanner is nil")
@@ -99,13 +103,15 @@ func NewService(
 			runtime.EventsEmit(appctx.GetContext(), eventName, payload)
 		}
 	}
-	return newServiceWithScanner(
+	service := newServiceWithScanner(
 		appctx.GetContext(),
 		store,
 		analyzer,
 		emit,
 		scanner.ParseGDUContext,
 	)
+	service.logs = logs
+	return service
 }
 
 func newServiceWithScanner(
@@ -176,6 +182,7 @@ func (service *Service) StartCleaning(directoryPath string, language string) (*C
 		cancel:   cancel,
 		done:     make(chan struct{}),
 		language: language,
+		log:      service.openLog(record.StartTime, absolutePath),
 	}
 	service.active = task
 	service.tree = nil
