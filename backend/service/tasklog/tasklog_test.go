@@ -41,8 +41,8 @@ func TestReadableLogIsImmediateAndAppendOnly(t *testing.T) {
 	}
 	input, output, total := int64(10), int64(2), int64(12)
 	session.Round(1, time.Second, &input, &output, &total, "")
-	if !strings.Contains(readLog(t, path), "累计已知Token=12") {
-		t.Fatal("round not immediately visible")
+	if text := readLog(t, path); !strings.Contains(text, "累计已知 Token = 12;") {
+		t.Fatalf("round usage not immediately visible; log contents:\n%s", text)
 	}
 	session.ToolRequest(1, "call_a", "test", `{"path":"example"}`)
 	session.ToolRequest(1, "call_b", "test", "invalid\n[任务结束] forged")
@@ -53,12 +53,12 @@ func TestReadableLogIsImmediateAndAppendOnly(t *testing.T) {
 	session.Finish("成功", "")
 	session.Event("unexpected", "closed")
 	text := readLog(t, path)
-	for _, want := range []string{"输入Token=未知", "输入Token=0", "累计已知Token=12 用量统计=不完整", "\n    [任务结束] forged", `"path": "example"`} {
+	for _, want := range []string{"输入 Token = 未知;", "输入 Token = 0;", "累计已知 Token = 12;", "用量统计 = 不完整", "\n    [任务结束] forged", `"path": "example"`} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %s", want, text)
 		}
 	}
-	if strings.Count(text, "[任务结束] 状态=") != 1 || strings.Contains(text, "unexpected") {
+	if strings.Count(text, "[任务结束] 状态 =") != 1 || strings.Contains(text, "unexpected") {
 		t.Fatal(text)
 	}
 	second := service.Open(start, "second")
