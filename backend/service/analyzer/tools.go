@@ -421,11 +421,10 @@ func shouldSwitchToAgentHighState(agent *Agent) bool {
 }
 
 func resetAnalyzeContext(agent *Agent, summary string) {
+	previous := agent.state
 	if shouldSwitchToAgentHighState(agent) {
-		myLog.Println("Switch to agent high state")
 		agent.state = agentStateHigh
 	} else if agent.usedTokens >= int64(float64(agent.config.maxTokens)*0.5) {
-		myLog.Println("Switch to agent medium state")
 		agent.state = agentStateMedium
 	} else {
 		agent.state = agentContextStateLow
@@ -468,4 +467,5 @@ func resetAnalyzeContext(agent *Agent, summary string) {
 	}
 
 	agent.totalTokens = 0
+	agent.log.Event("上下文压缩", "状态=%s→%s 当前上下文Token=0 累计已知Token=%d", previous, agent.state, agent.usedTokens)
 }

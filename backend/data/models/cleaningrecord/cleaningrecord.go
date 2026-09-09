@@ -275,27 +275,28 @@ func (store *Store) ListCleaningRecords(ctx context.Context) ([]CleaningRecord, 
 	return records, nil
 }
 
-// DeleteOldCleaningRecords keeps the newest maxCount records by scan start time.
-func (store *Store) DeleteOldCleaningRecords(ctx context.Context, maxCount int) error {
+// ListOldCleaningRecords selects candidates without deleting them.
+func (store *Store) ListOldCleaningRecords(ctx context.Context, maxCount int) ([]CleaningRecord, error) {
 	if maxCount < 0 {
-		return fmt.Errorf("delete old cleaning records: max count must not be negative")
+		return nil, fmt.Errorf("list old cleaning records: max count must not be negative")
 	}
+	var records []CleaningRecord
+	err := store.db.WithContext(ctx).Select("id", "start_time").
+		Order("start_time DESC").Order("id DESC").Offset(maxCount).Find(&records).Error
+	if err != nil {
+		return nil, fmt.Errorf("list old cleaning records: %w", err)
+	}
+	return records, nil
+}
 
+// DeleteCleaningRecordsByIDs deletes only candidates whose logs were handled.
+func (store *Store) DeleteCleaningRecordsByIDs(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
 	return store.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var ids []int64
-		if err := tx.Model(&CleaningRecord{}).
-			Select("id").
-			Order("start_time DESC").
-			Order("id DESC").
-			Offset(maxCount).
-			Find(&ids).Error; err != nil {
-			return fmt.Errorf("list old cleaning records: %w", err)
-		}
-		if len(ids) == 0 {
-			return nil
-		}
 		if err := tx.Delete(&CleaningRecord{}, "id IN ?", ids).Error; err != nil {
-			return fmt.Errorf("delete old cleaning records: %w", err)
+			return fmt.Errorf("delete cleaning records: %w", err)
 		}
 		return nil
 	})

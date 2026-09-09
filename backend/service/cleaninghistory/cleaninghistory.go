@@ -1,20 +1,26 @@
 package cleaninghistory
 
 import (
+	"ai-disk-cleanner/backend/service/tasklog"
 	"context"
+	"log"
+	"time"
 
 	appctx "ai-disk-cleanner/backend/ctx"
 )
 
 // Service performs startup maintenance for persisted cleaning history.
 type Service struct {
-	ctx   context.Context
-	store store
+	ctx       context.Context
+	store     store
+	removeLog func(time.Time) error
 }
 
 // NewService creates the cleaning history service for the central service manager.
-func NewService(store store) *Service {
-	return newService(appctx.GetContext(), store)
+func NewService(store store, logs *tasklog.Service) *Service {
+	service := newService(appctx.GetContext(), store)
+	service.removeLog = logs.Remove
+	return service
 }
 
 func newService(ctx context.Context, store store) *Service {
@@ -30,5 +36,17 @@ func (service *Service) CleanupOnStartup() error {
 	if err != nil {
 		return err
 	}
-	return service.store.DeleteOldCleaningRecords(service.ctx, maxCount)
+	records, err := service.store.ListOldCleaningRecords(service.ctx, maxCount)
+	if err != nil {
+		return err
+	}
+	ids := make([]int64, 0, len(records))
+	for _, record := range records {
+		if err := service.removeLog(record.StartTime); err != nil {
+			log.Printf("cleaning history: skip record %d: remove task log: %v", record.ID, err)
+			continue
+		}
+		ids = append(ids, record.ID)
+	}
+	return service.store.DeleteCleaningRecordsByIDs(service.ctx, ids)
 }

@@ -4,20 +4,14 @@ import (
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	"ai-disk-cleanner/backend/i18n"
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
+	"ai-disk-cleanner/backend/service/tasklog"
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/openai/openai-go/v3"
-)
-
-var myLog = log.New(
-	os.Stdout,
-	"[openai] ",
-	log.LstdFlags,
 )
 
 type agentContextState string
@@ -40,6 +34,7 @@ type Agent struct {
 	messages    []openai.ChatCompletionMessageParamUnion
 	TrashFiles  []cleaningrecord.TrashFile
 	TopUsages   []cleaningrecord.DiskUsage
+	log         analysisLogger
 }
 
 func newAgent(
@@ -64,6 +59,7 @@ func newAgent(
 		language:   language,
 		state:      agentContextStateLow,
 		usedTokens: 0,
+		log:        (*tasklog.Session)(nil),
 		messages: []openai.ChatCompletionMessageParamUnion{
 			openai.SystemMessage(systemPrompt),
 			openai.UserMessage(i18n.AnalyzerUserPrompt(language)),
@@ -83,6 +79,9 @@ func (agent *Agent) beforeCompletions() error {
 	}
 	// 工具拒绝思考 + 输出总结 + 汇总 + ? + 保险
 	if agent.usedTokens+agent.totalTokens*5 >= agent.config.maxTokens {
+		if agent.state != agentStateHigh {
+			agent.log.Event("上下文状态变化", "状态=%s→%s 累计已知Token=%d", agent.state, agentStateHigh, agent.usedTokens)
+		}
 		agent.state = agentStateHigh
 	}
 	return nil
@@ -103,6 +102,7 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 	manager := newManager()
 
 	var output strings.Builder
+	turn := 0
 	for {
 		if err := agent.ctx.Err(); err != nil {
 			return nil, err
@@ -127,19 +127,23 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		if err != nil {
 			return nil, err
 		}
+		turn++
+		started := time.Now()
 		completion, err := client.Chat.Completions.New(agent.ctx, params)
 		if err != nil {
-			return nil, fmt.Errorf("analyze disk: %w", err)
+			summary := completionErrorSummary(err)
+			agent.log.Round(turn, time.Since(started), nil, nil, nil, summary)
+			return nil, &analysisError{cause: fmt.Errorf("analyze disk: %w", err), summary: summary}
 		}
+		agent.logCompletion(turn, time.Since(started), completion)
 		agent.usedTokens += completion.Usage.TotalTokens
 		agent.totalTokens = completion.Usage.TotalTokens
-		myLog.Println("Completion turn finished, total", completion.Usage.TotalTokens, "used", agent.usedTokens, "state", agent.state)
 		agent.afterCompletions()
 		if err := agent.ctx.Err(); err != nil {
 			return nil, err
 		}
 		if len(completion.Choices) == 0 {
-			return nil, errors.New("LLM returned no choices: " + completion.RawJSON())
+			return nil, &analysisError{cause: errors.New("LLM returned no choices: " + completion.RawJSON()), summary: "LLM 未返回 choices"}
 		}
 
 		message := completion.Choices[0].Message
@@ -162,6 +166,7 @@ func (agent *Agent) run() (*cleaningrecord.AnalysisResult, error) {
 		}
 		for _, item := range toolCalls {
 			function := item.Function
+			agent.log.ToolRequest(turn, item.ID, function.Name, function.Arguments)
 			result, err := manager.Invoke(
 				function.Name,
 				function.Arguments,

@@ -333,8 +333,16 @@ func TestDeleteOldCleaningRecordsKeepsNewestByStartTime(t *testing.T) {
 		}
 	}
 
-	if err := store.DeleteOldCleaningRecords(context.Background(), 2); err != nil {
-		t.Fatalf("DeleteOldCleaningRecords() error = %v", err)
+	candidates, err := store.ListOldCleaningRecords(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]int64, 0, len(candidates))
+	for _, record := range candidates {
+		ids = append(ids, record.ID)
+	}
+	if err := store.DeleteCleaningRecordsByIDs(context.Background(), ids); err != nil {
+		t.Fatal(err)
 	}
 	records, err := store.ListCleaningRecords(context.Background())
 	if err != nil {
