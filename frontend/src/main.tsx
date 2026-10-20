@@ -4,6 +4,7 @@ import './globals.css'
 import AppRoutes from './pages/route'
 import DialogProvider from '@/components/DialogProvider'
 import { Toast } from '@heroui/react'
+import { toastQueue } from '@/util/toast'
 
 const container = document.getElementById('root')
 
@@ -13,6 +14,6 @@ root.render(
   <React.StrictMode>
     <DialogProvider />
     <AppRoutes />
-    <Toast.Provider />
+    <Toast.Provider queue={toastQueue} />
   </React.StrictMode>,
 )

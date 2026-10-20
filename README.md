@@ -25,6 +25,12 @@ Features:
 4. Open the Settings page and configure the LLM parameters.
 5. Return to the home page and start scanning. On Windows, running as administrator is recommended; on Linux, use a normal desktop user account.
 
+### Choose an LLM provider
+
+In Settings, choose either an OpenAI-compatible API or Local Codex CLI. The API option keeps its own URL, secret, model, token budget, and extra request body. Local Codex uses a separately installed Codex CLI and its existing terminal login; install it and run `codex login` in a terminal before selecting it. You can leave the executable path empty to resolve `codex` from the application's PATH, or enter one absolute executable path. On Windows, select a native executable instead of a `.cmd` or `.bat` wrapper.
+
+The Codex model override is optional and inherits the model configured in Codex CLI when blank. Its analysis timeout can be set from 30 to 3600 seconds. Codex still needs network access to the configured model provider; account access, quotas, and usage depend on that provider. The app does not install Codex, log in, or copy authentication tokens. A successful readiness check only means the CLI and login prerequisites are available; use Test Connection to check an actual model response.
+
 ## How It Works
 
 The entire architecture are three steps:

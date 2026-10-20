@@ -21,7 +21,7 @@ type LLMDelta = {
 const hasWailsRuntime = () =>
   typeof window !== 'undefined' && 'go' in window && 'runtime' in window
 
-export default function useCleaningTask() {
+export default function useCleaningTask({ streamOutput = false } = {}) {
   const [task, setTask] = useState<cleaner.CleaningTaskSnapshot | null>(null)
   const [records, setRecords] = useState<cleaningrecord.CleaningRecord[]>([])
   const [error, setError] = useState('')
@@ -46,6 +46,15 @@ export default function useCleaningTask() {
     }
 
     let mounted = true
+    let pendingRecordID: number | undefined
+    let pendingText = ''
+    let outputTimer: ReturnType<typeof setTimeout> | undefined
+    const clearPendingOutput = () => {
+      clearTimeout(outputTimer)
+      outputTimer = undefined
+      pendingText = ''
+      pendingRecordID = undefined
+    }
     void (async () => {
       try {
         const result = await GetActiveCleaning()
@@ -73,6 +82,9 @@ export default function useCleaningTask() {
           return
         }
         const snapshot = cleaner.CleaningTaskSnapshot.createFrom(payload)
+        // Snapshots contain authoritative full output, including the terminal
+        // delta. Discard queued fragments to avoid duplication after completion.
+        clearPendingOutput()
         setTask(snapshot)
         setIsStopping(snapshot.stopping)
         if (terminalStates.has(snapshot.state)) {
@@ -81,26 +93,45 @@ export default function useCleaningTask() {
       },
     )
     const stopDeltaListener = EventsOn(LLM_DELTA_EVENT, (payload: LLMDelta) => {
-      if (!mounted || !payload?.delta) {
+      if (!mounted || !streamOutput || !payload?.delta) {
         return
       }
-      setTask((current) => {
-        if (!current || current.id !== payload.recordId) {
-          return current
-        }
-        return cleaner.CleaningTaskSnapshot.createFrom({
-          ...current,
-          llmOutput: `${current.llmOutput ?? ''}${payload.delta}`,
+      if (
+        pendingRecordID !== undefined &&
+        pendingRecordID !== payload.recordId
+      ) {
+        clearPendingOutput()
+      }
+      pendingRecordID = payload.recordId
+      pendingText += payload.delta
+      if (outputTimer !== undefined) return
+      outputTimer = setTimeout(() => {
+        const recordID = pendingRecordID
+        const text = pendingText
+        clearPendingOutput()
+        if (!mounted) return
+        setTask((current) => {
+          if (
+            !current ||
+            current.id !== recordID ||
+            current.state !== 'ANALYZING'
+          )
+            return current
+          return cleaner.CleaningTaskSnapshot.createFrom({
+            ...current,
+            llmOutput: `${current.llmOutput ?? ''}${text}`,
+          })
         })
-      })
+      }, 120)
     })
 
     return () => {
       mounted = false
+      clearPendingOutput()
       stopTaskListener()
       stopDeltaListener()
     }
-  }, [refreshRecords])
+  }, [refreshRecords, streamOutput])
 
   const stop = useCallback(async () => {
     if (!task || isStopping) {
@@ -132,9 +163,9 @@ export function formatBytes(bytes: number) {
     return '0 B'
   }
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const unitIndex = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
+  const unitIndex = Math.max(
+    0,
+    Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1),
   )
   const value = bytes / 1024 ** unitIndex
   return `${value >= 10 || unitIndex === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[unitIndex]}`

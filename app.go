@@ -89,6 +89,14 @@ func (a *App) GetPlatformInfo() (model.PlatformInfo, error) {
 	return service.GetPlatformService().GetInfo()
 }
 
+// GetLLMStatus reports readiness for the selected LLM provider.
+func (a *App) GetLLMStatus() (analyzer.ProviderStatus, error) {
+	if err := a.ready(); err != nil {
+		return analyzer.ProviderStatus{}, err
+	}
+	return service.GetAnalyzerService().GetStatus(a.ctx)
+}
+
 // OpenTrashFileDirectory opens the directory containing a trash file.
 func (a *App) OpenTrashFileDirectory(path string) error {
 	target := filepath.Clean(path)
@@ -114,6 +122,13 @@ func (a *App) StopCleaning(recordID int64) error {
 		return err
 	}
 	return service.GetCleanerService().StopCleaning(recordID)
+}
+
+func (a *App) RetryCleaning(recordID int64, language string) (*cleaner.CleaningTaskSnapshot, error) {
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return service.GetCleanerService().RetryCleaning(recordID, language)
 }
 
 func (a *App) GetActiveCleaning() (*cleaner.CleaningTaskSnapshot, error) {

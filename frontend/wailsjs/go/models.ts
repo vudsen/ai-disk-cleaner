@@ -1,5 +1,23 @@
 export namespace analyzer {
 	
+	export class ProviderStatus {
+	    provider: string;
+	    ready: boolean;
+	    code: string;
+	    version: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.ready = source["ready"];
+	        this.code = source["code"];
+	        this.version = source["version"];
+	    }
+	}
 	export class TestConnectionResult {
 	    type: string;
 	    i18nMessage: string;
@@ -124,6 +142,7 @@ export namespace cleaningrecord {
 	    }
 	}
 	export class CleaningRecord {
+	    scanProgress?: scanner.ScanProgress;
 	    id: number;
 	    // Go type: time
 	    startTime: any;
@@ -144,6 +163,7 @@ export namespace cleaningrecord {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scanProgress = this.convertValues(source["scanProgress"], scanner.ScanProgress);
 	        this.id = source["id"];
 	        this.startTime = this.convertValues(source["startTime"], null);
 	        this.freedSize = source["freedSize"];
@@ -250,11 +270,11 @@ export namespace model {
 	    os: string;
 	    homeDirectory: string;
 	    defaultScanPath: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new PlatformInfo(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.os = source["os"];
@@ -286,11 +306,11 @@ export namespace scanner {
 	export class ScanWarning {
 	    path: string;
 	    code: string;
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ScanWarning(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.path = source["path"];
@@ -301,18 +321,18 @@ export namespace scanner {
 	    excludedCount: number;
 	    readErrorCount: number;
 	    warnings: ScanWarning[];
-
+	
 	    static createFrom(source: any = {}) {
 	        return new ScanSummary(source);
 	    }
-
+	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.excludedCount = source["excludedCount"];
 	        this.readErrorCount = source["readErrorCount"];
 	        this.warnings = this.convertValues(source["warnings"], ScanWarning);
 	    }
-
+	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
 		    if (!a) {
 		        return a;

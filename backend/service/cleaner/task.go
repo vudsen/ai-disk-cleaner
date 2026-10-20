@@ -12,24 +12,53 @@ import (
 )
 
 type activeTask struct {
-	snapshot CleaningTaskSnapshot
-	ctx      context.Context
-	cancel   context.CancelFunc
-	done     chan struct{}
-	language string
-	log      *tasklog.Session
-	logError string
+	snapshot          CleaningTaskSnapshot
+	ctx               context.Context
+	cancel            context.CancelFunc
+	done              chan struct{}
+	language          string
+	log               *tasklog.Session
+	logError          string
+	reuseScan         bool
+	cachedTree        *modelscanner.FileTree
+	persistCachedTree bool
 }
 
 func (service *Service) run(task *activeTask) {
 	defer task.log.Close()
-	tree, err := service.scan(task.ctx, task.snapshot.Path, func(progress modelscanner.ScanProgress) {
-		service.updateScanProgress(task, progress)
-	})
+	var tree *modelscanner.FileTree
+	var err error
+	if task.reuseScan {
+		tree = task.cachedTree
+		if tree == nil {
+			tree, err = service.store.LoadScanTree(task.ctx, task.snapshot.ID)
+		}
+		task.log.Event("复用扫描快照", "记录=%d，不重新扫描磁盘", task.snapshot.ID)
+	} else {
+		tree, err = service.scan(task.ctx, task.snapshot.Path, func(progress modelscanner.ScanProgress) { service.updateScanProgress(task, progress) })
+	}
 	if err != nil {
-		task.logError = "扫描阶段：" + tasklog.ErrorSummary(err)
+		task.logError = "扫描快照读取或扫描失败：" + tasklog.ErrorSummary(err)
 		service.finishFromError(task, err)
 		return
+	}
+	if tree == nil || tree.Root == nil {
+		service.finish(task, cleaningrecord.CLEANING_STATE_ERROR, "扫描目录树为空", false)
+		return
+	}
+	service.mu.Lock()
+	if service.active == task {
+		service.tree = tree
+	}
+	service.mu.Unlock()
+	// Save before calling the LLM so a timeout or application restart can reuse the scan.
+	// A RAM-only legacy scan is persisted on its first reanalysis as well.
+	if !task.reuseScan || task.persistCachedTree {
+		if err := service.store.SaveScanTree(task.ctx, task.snapshot.ID, tree); err != nil {
+			task.logError = "扫描快照保存失败：" + tasklog.ErrorSummary(err)
+			service.finishFromError(task, err)
+			return
+		}
 	}
 	if err := task.ctx.Err(); err != nil {
 		service.finishFromError(task, err)
@@ -191,7 +220,7 @@ func (service *Service) finish(
 	task.snapshot.ErrorMessage = errorMessage
 	task.snapshot.Stopping = false
 	snapshot := task.snapshot
-	retainTree := keepTree || (state == cleaningrecord.CLEANING_STATE_ERROR && service.tree != nil)
+	retainTree := keepTree || service.tree != nil
 	if retainTree {
 		service.treeSnapshot = &snapshot
 	} else {

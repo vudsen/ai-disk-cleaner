@@ -27,8 +27,36 @@ func (service *Service) List() ([]settingmodel.Setting, error) {
 }
 
 func (service *Service) Save(settings []settingmodel.Setting) error {
-	if err := validateSettings(settings); err != nil {
+	if err := validateSettingShape(settings); err != nil {
 		return err
 	}
-	return service.store.SaveSettings(service.ctx, settings)
+	settingsToSave := settings
+	if len(settings) == len(legacySettingKeys) {
+		current, err := service.store.ListSettings(service.ctx)
+		if err != nil {
+			return err
+		}
+		values := make(map[string]string, len(current))
+		for _, item := range current {
+			values[item.Key] = item.Value
+		}
+		defaults := map[string]string{
+			"llm.provider":          "api",
+			"codex.executable":      "",
+			"codex.model":           "",
+			"codex.timeout-seconds": "600",
+		}
+		settingsToSave = append([]settingmodel.Setting(nil), settings...)
+		for key, defaultValue := range defaults {
+			value, exists := values[key]
+			if !exists {
+				value = defaultValue
+			}
+			settingsToSave = append(settingsToSave, settingmodel.Setting{Key: key, Value: value})
+		}
+	}
+	if err := validateSettings(settingsToSave); err != nil {
+		return err
+	}
+	return service.store.SaveSettings(service.ctx, settingsToSave)
 }

@@ -84,18 +84,19 @@ const (
 
 // CleaningRecord records the result of a disk scan and cleanup.
 type CleaningRecord struct {
-	ID           int64                     `gorm:"column:id;primaryKey;autoIncrement:false" json:"id"`
-	StartTime    time.Time                 `gorm:"column:start_time;not null" json:"startTime"`
-	FreedSize    int64                     `gorm:"column:freed_size;not null" json:"freedSize"`
-	TrashSize    int64                     `gorm:"column:trash_size;not null" json:"trashSize"`
-	TrashFiles   []TrashFile               `gorm:"column:trash_files;type:text;serializer:json;not null" json:"trashFiles"`
-	TopUsages    []DiskUsage               `gorm:"column:top_usages;type:text;serializer:json;not null" json:"topUsages"`
-	Path         string                    `gorm:"column:path;not null" json:"path"`
-	LLMOutput    string                    `gorm:"column:llm_output;not null" json:"llmOutput"`
-	TokenUsage   int64                     `gorm:"column:token_usage;not null" json:"tokenUsage"`
-	State        string                    `gorm:"column:state;not null" json:"state"`
-	ErrorMessage string                    `gorm:"column:error_message;not null;default:''" json:"errorMessage"`
-	ScanSummary  *modelscanner.ScanSummary `gorm:"column:scan_summary;type:text;serializer:json" json:"scanSummary,omitempty"`
+	ScanProgress *modelscanner.ScanProgress `gorm:"-" json:"scanProgress,omitempty"`
+	ID           int64                      `gorm:"column:id;primaryKey;autoIncrement:false" json:"id"`
+	StartTime    time.Time                  `gorm:"column:start_time;not null" json:"startTime"`
+	FreedSize    int64                      `gorm:"column:freed_size;not null" json:"freedSize"`
+	TrashSize    int64                      `gorm:"column:trash_size;not null" json:"trashSize"`
+	TrashFiles   []TrashFile                `gorm:"column:trash_files;type:text;serializer:json;not null" json:"trashFiles"`
+	TopUsages    []DiskUsage                `gorm:"column:top_usages;type:text;serializer:json;not null" json:"topUsages"`
+	Path         string                     `gorm:"column:path;not null" json:"path"`
+	LLMOutput    string                     `gorm:"column:llm_output;not null" json:"llmOutput"`
+	TokenUsage   int64                      `gorm:"column:token_usage;not null" json:"tokenUsage"`
+	State        string                     `gorm:"column:state;not null" json:"state"`
+	ErrorMessage string                     `gorm:"column:error_message;not null;default:''" json:"errorMessage"`
+	ScanSummary  *modelscanner.ScanSummary  `gorm:"column:scan_summary;type:text;serializer:json" json:"scanSummary,omitempty"`
 }
 
 // SaveCleaningRecordScanSummary persists scan coverage separately from analysis completion.

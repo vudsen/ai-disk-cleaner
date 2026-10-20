@@ -1,4 +1,4 @@
-import { toast } from '@heroui/react'
+import { toast } from '@/util/toast'
 
 export const toastError = (e: unknown, title: string) => {
   let msg: string

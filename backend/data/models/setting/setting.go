@@ -28,6 +28,7 @@ func (Setting) TableName() string {
 }
 
 var defaultSettings = []Setting{
+	{Key: "llm.provider", Value: "api"},
 	{Key: "llm.secret", Value: ""},
 	{Key: "llm.url", Value: ""},
 	{Key: "llm.model", Value: ""},
@@ -35,6 +36,9 @@ var defaultSettings = []Setting{
 	{Key: "llm.auto-context-compress", Value: "false"},
 	{Key: "llm.extra-body", Value: ""},
 	{Key: "record.max.count", Value: "10"},
+	{Key: "codex.executable", Value: ""},
+	{Key: "codex.model", Value: ""},
+	{Key: "codex.timeout-seconds", Value: "600"},
 }
 
 // EnsureDefaultSettings creates settings that have not been configured yet.

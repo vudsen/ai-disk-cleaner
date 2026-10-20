@@ -30,7 +30,7 @@ type llmConfig struct {
 	extraBody                  map[string]any
 }
 
-func (analyzer *Service) loadLLMConfig(ctx context.Context) (*llmConfig, error) {
+func (analyzer *Service) loadProviderConfig(ctx context.Context) (*providerConfig, error) {
 	if analyzer.settings == nil {
 		return nil, errors.New("load LLM configuration: setting store is nil")
 	}
@@ -38,7 +38,7 @@ func (analyzer *Service) loadLLMConfig(ctx context.Context) (*llmConfig, error) 
 	if err != nil {
 		return nil, fmt.Errorf("load LLM configuration: %w", err)
 	}
-	return parseLLMConfig(settings)
+	return parseProviderConfig(settings)
 }
 
 func parseLLMConfig(settings []setting.Setting) (*llmConfig, error) {

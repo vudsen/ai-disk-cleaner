@@ -19,6 +19,8 @@ func TestGetStoreReturnsSingleton(t *testing.T) {
 	configDirectory := t.TempDir()
 	t.Setenv("APPDATA", configDirectory)
 	t.Setenv("XDG_CONFIG_HOME", configDirectory)
+	t.Setenv("XDG_DATA_HOME", configDirectory)
+	t.Setenv("XDG_STATE_HOME", configDirectory)
 
 	first, err := GetStore()
 	if err != nil {
@@ -393,7 +395,7 @@ func TestSettingDefaultsAndSave(t *testing.T) {
 	for _, item := range settings {
 		got[item.Key] = item.Value
 	}
-	if len(got) != 7 || got["llm.max-token"] != "620000" || got["llm.auto-context-compress"] != "false" || got["llm.extra-body"] != "" || got["record.max.count"] != "10" {
+	if len(got) != 11 || got["llm.provider"] != "api" || got["codex.executable"] != "" || got["codex.model"] != "" || got["codex.timeout-seconds"] != "600" || got["llm.max-token"] != "620000" || got["llm.auto-context-compress"] != "false" || got["llm.extra-body"] != "" || got["record.max.count"] != "10" {
 		t.Fatalf("default settings = %#v", got)
 	}
 
@@ -407,6 +409,15 @@ func TestSettingDefaultsAndSave(t *testing.T) {
 	}
 	if err := store.SaveSettings(context.Background(), updated); err != nil {
 		t.Fatalf("SaveSettings() error = %v", err)
+	}
+	providerSettings := []setting.Setting{
+		{Key: "llm.provider", Value: "codex"},
+		{Key: "codex.executable", Value: "/custom/codex"},
+		{Key: "codex.model", Value: "custom-model"},
+		{Key: "codex.timeout-seconds", Value: "1800"},
+	}
+	if err := store.SaveSettings(context.Background(), providerSettings); err != nil {
+		t.Fatalf("SaveSettings() provider settings error = %v", err)
 	}
 	if err := store.SaveSettings(context.Background(), []setting.Setting{
 		{Key: "llm.key", Value: "obsolete"},
@@ -425,10 +436,15 @@ func TestSettingDefaultsAndSave(t *testing.T) {
 	for _, item := range settings {
 		got[item.Key] = item.Value
 	}
-	if len(got) != 7 {
+	if len(got) != 11 {
 		t.Fatalf("settings after removing llm.key = %#v", got)
 	}
 	for _, want := range updated {
+		if got[want.Key] != want.Value {
+			t.Errorf("%s = %q, want %q", want.Key, got[want.Key], want.Value)
+		}
+	}
+	for _, want := range providerSettings {
 		if got[want.Key] != want.Value {
 			t.Errorf("%s = %q, want %q", want.Key, got[want.Key], want.Value)
 		}

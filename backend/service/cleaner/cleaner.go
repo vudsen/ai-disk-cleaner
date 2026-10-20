@@ -40,6 +40,19 @@ type Analyzer interface {
 	) (*cleaningrecord.AnalysisResult, error)
 }
 
+type recordStore interface {
+	CreateCleaningRecord(context.Context, *cleaningrecord.CleaningRecord) error
+	GetCleaningRecord(context.Context, int64) (*cleaningrecord.CleaningRecord, error)
+	ListCleaningRecords(context.Context) ([]cleaningrecord.CleaningRecord, error)
+	UpdateCleaningRecordState(context.Context, int64, string, string) error
+	CompleteCleaningRecord(context.Context, int64, *cleaningrecord.AnalysisResult) error
+	SaveDeletedTrashFiles(context.Context, *cleaningrecord.CleaningRecord) error
+	SaveCleaningRecordScanSummary(context.Context, int64, modelscanner.ScanSummary) error
+	SaveScanTree(context.Context, int64, *modelscanner.FileTree) error
+	LoadScanTree(context.Context, int64) (*modelscanner.FileTree, error)
+	ScanTreeProgress(context.Context, []int64) (map[int64]modelscanner.ScanProgress, error)
+}
+
 type ScanFunc func(
 	context.Context,
 	string,
@@ -76,7 +89,7 @@ type DeleteFailure struct {
 // Service owns the process-wide cleaning task and the latest scanned tree.
 type Service struct {
 	ctx      context.Context
-	store    *cleaningrecord.Store
+	store    recordStore
 	analyzer Analyzer
 	scan     ScanFunc
 	emit     EventEmitter
@@ -90,7 +103,7 @@ type Service struct {
 
 // NewService creates the cleaner service for the central service manager.
 func NewService(
-	store *cleaningrecord.Store,
+	store recordStore,
 	analyzer Analyzer,
 	scanner *serviceScanner.Service,
 	logs *tasklog.Service,
@@ -117,7 +130,7 @@ func NewService(
 
 func newServiceWithScanner(
 	ctx context.Context,
-	store *cleaningrecord.Store,
+	store recordStore,
 	analyzer Analyzer,
 	emit EventEmitter,
 	scan ScanFunc,
@@ -196,6 +209,63 @@ func (service *Service) StartCleaning(directoryPath string, language string) (*C
 	return &snapshot, nil
 }
 
+// RetryCleaning reuses the same record and its completed scan. It never scans disk.
+func (service *Service) RetryCleaning(recordID int64, language string) (*CleaningTaskSnapshot, error) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if service.active != nil {
+		return nil, ErrTaskRunning
+	}
+	if service.store == nil || service.analyzer == nil {
+		return nil, errors.New("retry cleaning: service is not initialized")
+	}
+	record, err := service.store.GetCleaningRecord(service.ctx, recordID)
+	if err != nil {
+		return nil, err
+	}
+	if record.State != cleaningrecord.CLEANING_STATE_ERROR && record.State != cleaningrecord.CLEANING_STATE_CANCELLED && record.State != cleaningrecord.CLEANING_STATE_DONE {
+		return nil, errors.New("retry cleaning: record is still running")
+	}
+	var cached *modelscanner.FileTree
+	if service.treeSnapshot != nil && service.treeSnapshot.ID == recordID {
+		cached = service.tree
+	}
+	metadata, err := service.store.ScanTreeProgress(service.ctx, []int64{recordID})
+	if err != nil {
+		return nil, err
+	}
+	_, snapshotExists := metadata[recordID]
+	if !snapshotExists && cached == nil {
+		return nil, errors.New("该记录没有保存完整扫描快照，无法重新分析。旧版本仅保存统计和分析结果，不能恢复目录树；程序不会自动重新扫描。")
+	}
+	if err := service.store.UpdateCleaningRecordState(service.ctx, recordID, cleaningrecord.CLEANING_STATE_ANALYZING, ""); err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithCancel(service.ctx)
+	task := &activeTask{
+		snapshot: CleaningTaskSnapshot{
+			ID: recordID, StartTime: record.StartTime, Path: record.Path,
+			State: cleaningrecord.CLEANING_STATE_ANALYZING, ScanProgress: metadata[recordID],
+		},
+		ctx: ctx, cancel: cancel, done: make(chan struct{}), language: language,
+		log:       service.openLog(record.StartTime, record.Path),
+		reuseScan: true, cachedTree: cached, persistCachedTree: !snapshotExists,
+	}
+	if record.ScanSummary != nil {
+		task.snapshot.ScanSummary = *record.ScanSummary
+	}
+	service.active = task
+	service.tree = cached
+	service.treeSnapshot = nil
+	snapshot := task.snapshot
+	// The worker acquires the slot mutex before updating task state.
+	go func() {
+		service.emit(EventTaskUpdated, snapshot)
+		service.run(task)
+	}()
+	return &snapshot, nil
+}
+
 // StopCleaning requests cancellation. The task remains active until its worker exits.
 func (service *Service) StopCleaning(recordID int64) error {
 	service.mu.Lock()
@@ -236,7 +306,24 @@ func (service *Service) GetActiveCleaning() *CleaningTaskSnapshot {
 }
 
 func (service *Service) ListCleaningRecords() ([]cleaningrecord.CleaningRecord, error) {
-	return service.store.ListCleaningRecords(service.ctx)
+	records, err := service.store.ListCleaningRecords(service.ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]int64, len(records))
+	for i := range records {
+		ids[i] = records[i].ID
+	}
+	progress, err := service.store.ScanTreeProgress(service.ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for i := range records {
+		if value, ok := progress[records[i].ID]; ok {
+			records[i].ScanProgress = &value
+		}
+	}
+	return records, nil
 }
 
 func (service *Service) DeleteTrashFiles(

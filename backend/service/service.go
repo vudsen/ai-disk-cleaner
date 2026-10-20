@@ -69,7 +69,7 @@ func setupServices() (services, error) {
 	newCleaningHistoryService := cleaninghistory.NewService(store, newTaskLogService)
 	newMigrationService := migration.NewService(store)
 	newCleanerService := cleaner.NewService(
-		store.Store,
+		store,
 		newAnalyzerService,
 		newScannerService,
 		newTaskLogService,

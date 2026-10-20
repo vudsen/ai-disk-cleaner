@@ -32,11 +32,11 @@ import useCleaningTask, {
 import {
   GetDisks,
   GetPlatformInfo,
-  ListSettings,
+  GetLLMStatus,
   SelectDirectory,
   StartCleaning,
 } from '../../../wailsjs/go/main/App'
-import type { model, setting } from '../../../wailsjs/go/models'
+import type { model } from '../../../wailsjs/go/models'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { toastError } from '@/util/toast-error'
@@ -49,7 +49,12 @@ type ScanValues = {
 const hasWailsRuntime = () =>
   typeof window !== 'undefined' && 'go' in window && 'runtime' in window
 
-const requiredLLMSettingKeys = ['llm.secret', 'llm.url', 'llm.model'] as const
+type LLMStatus = {
+  provider: string
+  ready: boolean
+  code: string
+  version: string
+}
 
 function findContainingDisk(
   disks: model.DiskInfo[],
@@ -81,11 +86,6 @@ function findContainingDisk(
     .sort((left, right) => right.path.length - left.path.length)[0]
 }
 
-function hasCompleteLLMConfiguration(settings: setting.Setting[]) {
-  const values = new Map(settings.map((item) => [item.key, item.value.trim()]))
-  return requiredLLMSettingKeys.every((key) => Boolean(values.get(key)))
-}
-
 export default function HomePage() {
   const { i18n, t } = useTranslation()
   const navigate = useNavigate()
@@ -103,6 +103,7 @@ export default function HomePage() {
   const [isSelectingDirectory, setIsSelectingDirectory] = useState(false)
   const [isCheckingLLM, setIsCheckingLLM] = useState(false)
   const [isLLMConfigured, setIsLLMConfigured] = useState<boolean | null>(null)
+  const [llmStatus, setLLMStatus] = useState<LLMStatus | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [disks, setDisks] = useState<model.DiskInfo[]>([])
@@ -197,10 +198,12 @@ export default function HomePage() {
     }
 
     let mounted = true
-    void ListSettings()
-      .then((settings) => {
+    void GetLLMStatus()
+      .then((status) => {
         if (mounted) {
-          setIsLLMConfigured(hasCompleteLLMConfiguration(settings ?? []))
+          const current = status as LLMStatus
+          setLLMStatus(current)
+          setIsLLMConfigured(current.ready)
         }
       })
       .catch((reason: unknown) => {
@@ -236,14 +239,16 @@ export default function HomePage() {
     if (hasWailsRuntime()) {
       setIsCheckingLLM(true)
       try {
-        const configured = hasCompleteLLMConfiguration(
-          (await ListSettings()) ?? [],
-        )
-        setIsLLMConfigured(configured)
-        if (!configured) {
+        const current = (await GetLLMStatus()) as LLMStatus
+        setLLMStatus(current)
+        setIsLLMConfigured(current.ready)
+        if (!current.ready) {
+          const messageKey = `home.providerStatus.${current.code}`
           showDialog({
             title: t('home.llmNotConfiguredDialogTitle'),
-            message: t('home.llmNotConfiguredDialogMessage'),
+            message: t(messageKey, {
+              defaultValue: t('home.llmNotConfiguredDialogMessage'),
+            }),
             confirmBtnText: t('home.goToSettings'),
             onConfirm: () => navigate('/settings'),
           })
@@ -302,9 +307,16 @@ export default function HomePage() {
         <Alert status="warning" className="bg-warning/10">
           <Alert.Indicator />
           <Alert.Content>
-            <Alert.Title>{t('home.llmNotConfigured')}</Alert.Title>
+            <Alert.Title>
+              {t(
+                `home.providerStatus.${llmStatus?.code ?? 'config_missing'}.title`,
+              )}
+            </Alert.Title>
             <Alert.Description>
-              {t('home.llmNotConfiguredDescription')}{' '}
+              {t(
+                `home.providerStatus.${llmStatus?.code ?? 'config_missing'}.description`,
+                { defaultValue: t('home.llmNotConfiguredDescription') },
+              )}{' '}
               <Link onPress={() => navigate('/settings')}>
                 {t('home.goToSettings')}
               </Link>
@@ -327,9 +339,6 @@ export default function HomePage() {
           scanTarget === 'directory' ? 'min-h-[30rem]' : 'min-h-80'
         }`}
       >
-        <div className="bg-accent/10 absolute -top-16 -right-12 size-56 rounded-full blur-3xl" />
-        <div className="bg-success/10 absolute -bottom-20 left-1/3 size-64 rounded-full blur-3xl" />
-
         <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center justify-center text-center">
           <div className="flex max-w-xl flex-col items-center">
             <span className="bg-accent/10 text-accent mb-5 inline-flex size-11 items-center justify-center rounded-xl">
@@ -361,7 +370,7 @@ export default function HomePage() {
                       field.onChange(key)
                     }}
                   >
-                    <Select.Trigger className="h-12 rounded-xl bg-white/80 shadow-sm backdrop-blur-sm">
+                    <Select.Trigger className="h-12 rounded-xl bg-white/80 shadow-sm">
                       <HardDrive
                         aria-hidden="true"
                         className="text-muted"
@@ -446,7 +455,7 @@ export default function HomePage() {
                 {(field) => (
                   <Button
                     aria-label={t('home.openSysSelector')}
-                    className="h-12 w-full justify-start gap-3 rounded-xl bg-white/80 px-4 shadow-sm backdrop-blur-sm"
+                    className="h-12 w-full justify-start gap-3 rounded-xl bg-white/80 px-4 shadow-sm"
                     isDisabled={isSelectingDirectory}
                     variant="secondary"
                     onPress={() => void handleSelectDirectory(field.onChange)}

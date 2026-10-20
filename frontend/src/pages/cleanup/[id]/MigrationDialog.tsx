@@ -1,4 +1,5 @@
-import { Button, Description, Input, Label, Modal, toast } from '@heroui/react'
+import { Button, Description, Input, Label, Modal } from '@heroui/react'
+import { toast } from '@/util/toast'
 import {
   Check,
   Copy,

@@ -1,13 +1,5 @@
 import type { Key } from '@heroui/react'
-import {
-  Button,
-  Card,
-  Dropdown,
-  Label,
-  Table,
-  toast,
-  Tooltip,
-} from '@heroui/react'
+import { Button, Card, Dropdown, Label, Table, Tooltip } from '@heroui/react'
 import { EllipsisVertical, LoaderCircle, Undo2, Waypoints } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import type { migration } from '../../../wailsjs/go/models'
@@ -19,6 +11,7 @@ import {
 import { showDialog } from '@/components/DialogProvider'
 import { formatDate } from '@/hooks/useCleaningTask'
 import { toastError } from '@/util/toast-error'
+import { toast } from '@/util/toast'
 import { useTranslation } from 'react-i18next'
 
 const hasWailsRuntime = () =>

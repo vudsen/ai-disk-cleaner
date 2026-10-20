@@ -3,9 +3,9 @@
 import {migration} from '../models';
 import {cleaner} from '../models';
 import {model} from '../models';
+import {analyzer} from '../models';
 import {cleaningrecord} from '../models';
 import {setting} from '../models';
-import {analyzer} from '../models';
 
 export function CopyMigrationSource(arg1:string,arg2:string,arg3:string):Promise<string>;
 
@@ -20,6 +20,8 @@ export function DeleteTrashFiles(arg1:number,arg2:Array<string>,arg3:boolean):Pr
 export function GetActiveCleaning():Promise<cleaner.CleaningTaskSnapshot>;
 
 export function GetDisks():Promise<Array<model.DiskInfo>>;
+
+export function GetLLMStatus():Promise<analyzer.ProviderStatus>;
 
 export function GetPlatformInfo():Promise<model.PlatformInfo>;
 
@@ -36,6 +38,8 @@ export function ListSettings():Promise<Array<setting.Setting>>;
 export function OpenTrashFileDirectory(arg1:string):Promise<void>;
 
 export function RestoreMigration(arg1:number):Promise<void>;
+
+export function RetryCleaning(arg1:number,arg2:string):Promise<cleaner.CleaningTaskSnapshot>;
 
 export function SaveSettings(arg1:Array<setting.Setting>):Promise<void>;
 
