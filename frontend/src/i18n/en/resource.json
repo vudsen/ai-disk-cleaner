@@ -26,6 +26,11 @@
     "used": "Used",
     "total": "Total",
     "currentUsage": "Disk Usage",
+    "platformInfoFailed": "Unable to load platform information; choose a directory to scan.",
+    "noCapacityInfo": "No capacity data for this path",
+    "unknownDisk": "The selected disk is unavailable",
+    "noDiskList": "No mounted disks are available. You can still scan a custom directory.",
+    "diskUsagePercent": "Mounted filesystem usage",
     "historyScan": "History Scan Record",
     "historyScanDesc": "Recent Finished Scan Record",
     "noHistoryRecord": "No Cleaning Record"
@@ -40,6 +45,8 @@
     "detail": {
       "foundFiles": "Found Files",
       "scannedSize": "Scanned Size",
+      "scanIncompleteTitle": "Incomplete Scan",
+      "scanIncomplete": "This scan skipped {{ excluded }} paths and encountered {{ errors }} read errors. Results may be incomplete.",
       "currentStatus": "Status",
       "diskUsage": "Disk Mainly Usage",
       "diskUsageDesc": "Disk mainly usage shows where the trash files separate and the risk level to be delete",

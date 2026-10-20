@@ -1,4 +1,4 @@
-import { Button, Chip, ProgressBar } from '@heroui/react'
+import { Alert, Button, Chip, ProgressBar } from '@heroui/react'
 import {
   AlertCircle,
   Clock3,
@@ -17,11 +17,13 @@ type ScanProgressHeaderProps = {
     path: string
     startTime: unknown
     state: string
+    scanSummary?: scanner.ScanSummary | null
   }
   isRunning: boolean
   isStopping: boolean
   onStop: () => void
   scanProgress?: scanner.ScanProgress | null
+  scanSummary?: scanner.ScanSummary | null
 }
 
 export default function ScanProgressHeader({
@@ -30,6 +32,7 @@ export default function ScanProgressHeader({
   isStopping,
   onStop,
   scanProgress,
+  scanSummary,
 }: ScanProgressHeaderProps) {
   const { t } = useTranslation()
   return (
@@ -121,6 +124,23 @@ export default function ScanProgressHeader({
           {detail.errorMessage}
         </div>
       )}
+      {scanSummary &&
+        (scanSummary.excludedCount > 0 || scanSummary.readErrorCount > 0) && (
+          <Alert status="warning" className="bg-warning/10 mt-5">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>
+                {t('cleanup.detail.scanIncompleteTitle')}
+              </Alert.Title>
+              <Alert.Description>
+                {t('cleanup.detail.scanIncomplete', {
+                  excluded: scanSummary.excludedCount,
+                  errors: scanSummary.readErrorCount,
+                })}
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        )}
     </div>
   )
 }

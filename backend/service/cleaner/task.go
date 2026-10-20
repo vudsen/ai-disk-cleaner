@@ -2,6 +2,7 @@ package cleaner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -36,6 +37,18 @@ func (service *Service) run(task *activeTask) {
 	}
 
 	task.log.Event("扫描完成", "占用=%.2f GiB 字节数=%d 条目数=%d", float64(tree.Root.DiskSize)/(1<<30), tree.Root.DiskSize, tree.Root.ItemCount)
+	service.mu.Lock()
+	if service.active == task {
+		task.snapshot.ScanSummary = tree.ScanSummary
+	}
+	service.mu.Unlock()
+	if err := service.store.SaveCleaningRecordScanSummary(service.ctx, task.snapshot.ID, tree.ScanSummary); err != nil {
+		task.logError = "扫描摘要保存失败：" + tasklog.ErrorSummary(err)
+		service.finish(task, cleaningrecord.CLEANING_STATE_ERROR, err.Error(), false)
+		return
+	}
+	encodedSummary, _ := json.Marshal(tree.ScanSummary)
+	task.log.Event("扫描摘要", "%s", encodedSummary)
 	if err := service.store.UpdateCleaningRecordState(
 		service.ctx,
 		task.snapshot.ID,

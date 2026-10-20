@@ -21,6 +21,8 @@ export function GetActiveCleaning():Promise<cleaner.CleaningTaskSnapshot>;
 
 export function GetDisks():Promise<Array<model.DiskInfo>>;
 
+export function GetPlatformInfo():Promise<model.PlatformInfo>;
+
 export function Greet(arg1:string):Promise<string>;
 
 export function IsRunningAsAdministrator():Promise<boolean>;

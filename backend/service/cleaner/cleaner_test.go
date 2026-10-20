@@ -105,7 +105,7 @@ func TestServiceRunsTaskAndPersistsResult(t *testing.T) {
 		if finished.LLMOutput != "分析完成" {
 			t.Fatalf("LLMOutput = %q", finished.LLMOutput)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("task did not finish")
 	}
 

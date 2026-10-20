@@ -2,7 +2,6 @@ package main
 
 import (
 	"ai-disk-cleanner/backend/model"
-	"ai-disk-cleanner/backend/util"
 	"context"
 	"errors"
 	"fmt"
@@ -71,12 +70,23 @@ func (a *App) SelectMigrationDirectory() (string, error) {
 
 // GetDisks returns the disks currently available to scan.
 func (a *App) GetDisks() ([]model.DiskInfo, error) {
-	return util.ListDisks()
+	if err := a.ready(); err != nil {
+		return nil, err
+	}
+	return service.GetPlatformService().ListDisks()
 }
 
 // IsRunningAsAdministrator reports whether the current process is elevated.
 func (a *App) IsRunningAsAdministrator() bool {
-	return util.IsRunningAsAdministrator()
+	return service.GetPlatformService().IsRunningAsAdministrator()
+}
+
+// GetPlatformInfo returns the native platform and its recommended scan path.
+func (a *App) GetPlatformInfo() (model.PlatformInfo, error) {
+	if err := a.ready(); err != nil {
+		return model.PlatformInfo{}, err
+	}
+	return service.GetPlatformService().GetInfo()
 }
 
 // OpenTrashFileDirectory opens the directory containing a trash file.

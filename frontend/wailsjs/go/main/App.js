@@ -30,6 +30,10 @@ export function GetDisks() {
   return window['go']['main']['App']['GetDisks']();
 }
 
+export function GetPlatformInfo() {
+  return window['go']['main']['App']['GetPlatformInfo']();
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }

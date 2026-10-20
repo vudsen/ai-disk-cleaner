@@ -280,11 +280,7 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	if !strings.HasPrefix(args.Path, "/") {
 		return "", fmt.Errorf("path must start with '/': %q", args.Path)
 	}
-	if strings.Contains(args.Path, `\`) {
-		return "", fmt.Errorf("path must use '/' as its separator: %q", args.Path)
-	}
-
-	treePath := modelscanner.NormalizeTreePath(args.Path)
+	treePath := modelscanner.NormalizeTreePathForRoot(agent.tree.RootPath, args.Path)
 	node, err := agent.tree.FindNode(treePath)
 	if err != nil {
 		return "", err

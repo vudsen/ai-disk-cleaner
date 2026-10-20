@@ -74,6 +74,29 @@ func TestReadableLogIsImmediateAndAppendOnly(t *testing.T) {
 	}
 }
 
+func TestOpenUsesConfiguredLogDirectoryAndPrivatePermissions(t *testing.T) {
+	logDirectory := t.TempDir()
+	service := &Service{logDirectory: func() (string, error) { return logDirectory, nil }}
+	start := time.Date(2026, 10, 19, 10, 11, 12, 123000000, time.Local)
+	filename, err := service.filename(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Dir(filename) != logDirectory {
+		t.Fatalf("filename directory = %q, want %q", filepath.Dir(filename), logDirectory)
+	}
+
+	session := service.Open(start, "/tmp")
+	session.Finish("success", "")
+	info, err := os.Stat(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0600 {
+		t.Fatalf("log permissions = %04o, want 0600", got)
+	}
+}
+
 type brokenWriter struct{ writes, closes int }
 
 func (writer *brokenWriter) Write(data []byte) (int, error) {

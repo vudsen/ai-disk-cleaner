@@ -9,7 +9,10 @@ import {
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo } from 'react'
 import { showDialog } from '@/components/DialogProvider'
-import { IsRunningAsAdministrator } from '../../wailsjs/go/main/App'
+import {
+  GetPlatformInfo,
+  IsRunningAsAdministrator,
+} from '../../wailsjs/go/main/App'
 import { useTranslation } from 'react-i18next'
 
 let administratorWarningChecked = false
@@ -34,8 +37,12 @@ export default function Layout() {
     }
     administratorWarningChecked = true
 
-    void IsRunningAsAdministrator()
-      .then((isAdministrator) => {
+    void GetPlatformInfo()
+      .then(async (platformInfo) => {
+        if (platformInfo.os !== 'windows') {
+          return
+        }
+        const isAdministrator = await IsRunningAsAdministrator()
         if (isAdministrator) {
           return
         }

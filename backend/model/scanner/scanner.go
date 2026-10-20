@@ -47,9 +47,32 @@ func (n *FileNode) IsDir() bool {
 }
 
 type FileTree struct {
-	Metadata GDUReportMetadata `json:"metadata"`
-	RootPath string            `json:"rootPath"`
-	Root     *FileNode         `json:"root"`
+	Metadata    GDUReportMetadata `json:"metadata"`
+	RootPath    string            `json:"rootPath"`
+	Root        *FileNode         `json:"root"`
+	ScanSummary ScanSummary       `json:"scanSummary"`
+}
+
+type ScanWarning struct {
+	Path string `json:"path"`
+	Code string `json:"code"`
+}
+
+type ScanSummary struct {
+	ExcludedCount  int64         `json:"excludedCount"`
+	ReadErrorCount int64         `json:"readErrorCount"`
+	Warnings       []ScanWarning `json:"warnings"`
+}
+
+const MaxScanWarnings = 100
+
+func (summary *ScanSummary) AddWarning(path, code string) {
+	if summary == nil {
+		return
+	}
+	if len(summary.Warnings) < MaxScanWarnings {
+		summary.Warnings = append(summary.Warnings, ScanWarning{Path: path, Code: code})
+	}
 }
 
 type FileEntry struct {
@@ -89,7 +112,7 @@ func (t *FileTree) FindNode(treePath string) (*FileNode, error) {
 	if t == nil || t.Root == nil {
 		return nil, fmt.Errorf("%w: tree has no root", ErrNodeNotFound)
 	}
-	normalizedTreePath := NormalizeTreePath(treePath)
+	normalizedTreePath := NormalizeTreePathForRoot(t.RootPath, treePath)
 	current := t.Root
 	for _, part := range strings.Split(strings.TrimPrefix(normalizedTreePath, "/"), "/") {
 		if part == "" {
@@ -110,6 +133,39 @@ func (t *FileTree) FindNode(treePath string) (*FileNode, error) {
 func NormalizeTreePath(treePath string) string {
 	normalized := strings.ReplaceAll(treePath, `\`, "/")
 	return path.Clean("/" + normalized)
+}
+
+// NormalizeTreePathForRoot applies the path rules implied by a tree's root.
+func NormalizeTreePathForRoot(rootPath, treePath string) string {
+	if isWindowsTreePath(rootPath) {
+		return NormalizeTreePath(treePath)
+	}
+	return path.Clean("/" + treePath)
+}
+
+// TreePathBaseName returns a root name without treating POSIX backslashes as separators.
+func TreePathBaseName(treePath string) string {
+	separators := "/"
+	if isWindowsTreePath(treePath) {
+		separators = `/\`
+	}
+	trimmed := strings.TrimRight(treePath, separators)
+	if trimmed == "" {
+		return treePath
+	}
+	if index := strings.LastIndexAny(trimmed, separators); index >= 0 {
+		return trimmed[index+1:]
+	}
+	return trimmed
+}
+
+func isWindowsTreePath(treePath string) bool {
+	if strings.HasPrefix(treePath, `\\`) || strings.HasPrefix(treePath, "//") {
+		return true
+	}
+	return len(treePath) >= 3 &&
+		((treePath[0] >= 'a' && treePath[0] <= 'z') || (treePath[0] >= 'A' && treePath[0] <= 'Z')) &&
+		treePath[1] == ':' && (treePath[2] == '/' || treePath[2] == '\\')
 }
 
 func entryFromNode(node *FileNode) FileEntry {

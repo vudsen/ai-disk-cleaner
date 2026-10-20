@@ -19,11 +19,11 @@ Features:
 
 ## Quick Start
 
-1. Download the latest `.exe` from the [Releases](https://github.com/vudsen/ai-disk-cleaner/releases) page (currently Windows only).
-2. Place the downloaded `.exe` in a dedicated folder. The application will create its data files in the executable's current directory after startup.
-3. Launch the application. Running it as an administrator is recommended; otherwise, some deletion or migration operations may fail.
+1. Download the Windows `.exe` or Linux `amd64` `.tar.gz` from the [Releases](https://github.com/vudsen/ai-disk-cleaner/releases) page. Linux builds are currently validated on Ubuntu 24.04 amd64.
+2. On Windows, place the `.exe` in a dedicated folder; its data remains beside the executable. On Linux, extract the archive and run `./ai-disk-cleaner` from the extracted folder. Linux requires GTK 3 and WebKit2GTK 4.1 at runtime.
+3. Linux data is stored in `$XDG_DATA_HOME/ai-disk-cleaner` (default: `$HOME/.local/share/ai-disk-cleaner`) and logs in `$XDG_STATE_HOME/ai-disk-cleaner/logs` (default: `$HOME/.local/state/ai-disk-cleaner/logs`). Existing beta data is not migrated automatically. With the application closed, back up the old `data.db` before moving it to the new data directory; do not overwrite a database created by the new version.
 4. Open the Settings page and configure the LLM parameters.
-5. Return to the home page and start scanning.
+5. Return to the home page and start scanning. On Windows, running as administrator is recommended; on Linux, use a normal desktop user account.
 
 ## How It Works
 

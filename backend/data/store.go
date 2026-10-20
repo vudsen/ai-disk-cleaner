@@ -8,14 +8,11 @@ import (
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	"ai-disk-cleanner/backend/data/models/migration"
 	"ai-disk-cleanner/backend/data/models/setting"
+	"ai-disk-cleanner/backend/util"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite"
-)
-
-const (
-	databaseFilename = "./data.db"
 )
 
 var (
@@ -32,10 +29,13 @@ func GetStore() (*Store, error) {
 	return storeInstance, storeError
 }
 
-// openDefaultSQLite opens the application database in the current user's
-// configuration directory.
+// openDefaultSQLite opens the application database in its platform data directory.
 func openDefaultSQLite() (*Store, error) {
-	return openSQLite(databaseFilename)
+	databasePath, err := util.DataFilePath()
+	if err != nil {
+		return nil, fmt.Errorf("resolve application database path: %w", err)
+	}
+	return openSQLite(databasePath)
 }
 
 // openSQLite opens a SQLite database and creates or updates its schema.

@@ -12,7 +12,17 @@ import (
 const timestampLayout = "2006-01-02 15:04:05.000"
 
 func (service *Service) filename(start time.Time) (string, error) {
-	if service == nil || service.executable == nil {
+	if service == nil {
+		return "", fmt.Errorf("task log service is not configured")
+	}
+	if service.logDirectory != nil {
+		directory, err := service.logDirectory()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(directory, start.Local().Format("2006-01-02_15-04-05.000")+".log"), nil
+	}
+	if service.executable == nil {
 		return "", fmt.Errorf("task log service is not configured")
 	}
 	executable, err := service.executable()

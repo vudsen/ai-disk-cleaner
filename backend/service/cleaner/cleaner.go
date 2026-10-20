@@ -57,6 +57,7 @@ type CleaningTaskSnapshot struct {
 	ErrorMessage string                    `json:"errorMessage"`
 	LLMOutput    string                    `json:"llmOutput"`
 	ScanProgress modelscanner.ScanProgress `json:"scanProgress"`
+	ScanSummary  modelscanner.ScanSummary  `json:"scanSummary"`
 	Stopping     bool                      `json:"stopping"`
 }
 
@@ -294,6 +295,10 @@ func (service *Service) DeleteTrashFiles(
 		target, err := toAbsPath(record.Path, candidate.Path)
 		if err != nil {
 			failures = append(failures, DeleteFailure{Path: resolvedCandidatePath(record.Path, candidate.Path), Message: err.Error()})
+			continue
+		}
+		if err := validateLinuxDeletionBoundary(record.Path, target); err != nil {
+			failures = append(failures, DeleteFailure{Path: target, Message: err.Error()})
 			continue
 		}
 		info, err := os.Lstat(target)

@@ -18,11 +18,11 @@
 
 ## 快速开始
 
-1. 从 [Release](https://github.com/vudsen/ai-disk-cleaner/releases) 列表中下载最新版本 exe (目前仅支持 Windows)
-2. 下载完毕后，将 exe 放在一个单独的文件夹中(应用启动后会在 exe 当前目录生成数据文件)
-3. 打开应用 (推荐以管理员权限打开，否则某些删除或迁移操作可能会报错)
-4. 进入设置页面，配置大模型参数
-5. 回到首页，开始扫描
+1. 从 [Release](https://github.com/vudsen/ai-disk-cleaner/releases) 下载 Windows `.exe` 或 Linux `amd64` `.tar.gz`。当前 Linux 构建在 Ubuntu 24.04 amd64 上验证。
+2. Windows 版放在单独目录中，数据仍保存在 exe 旁边。Linux 版解压后在解压目录运行 `./ai-disk-cleaner`；运行时需要 GTK 3 和 WebKit2GTK 4.1。
+3. Linux 数据保存在 `$XDG_DATA_HOME/ai-disk-cleaner`（默认 `$HOME/.local/share/ai-disk-cleaner`），日志保存在 `$XDG_STATE_HOME/ai-disk-cleaner/logs`（默认 `$HOME/.local/state/ai-disk-cleaner/logs`）。旧测试版数据不会自动迁移。关闭应用后，先备份旧 `data.db`，再移动到新数据目录；不要覆盖新版本已创建的数据库。
+4. 打开设置页面，配置大模型参数。
+5. 回到首页，开始扫描。Windows 推荐以管理员权限运行；Linux 请使用普通桌面用户运行。
 
 ## 运作原理
 

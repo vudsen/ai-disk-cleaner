@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
@@ -40,17 +41,31 @@ func scanGDUContext(
 	if !info.IsDir() {
 		return nil, fmt.Errorf("parse gdu directory %q: path is not a directory", absoluteDirectoryPath)
 	}
+	if err := validateScanRoot(absoluteDirectoryPath); err != nil {
+		return nil, fmt.Errorf("validate scan root %q: %w", absoluteDirectoryPath, err)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("analyze directory %q: %w", absoluteDirectoryPath, err)
 	}
+	policy, err := buildScanPolicy(ctx, absoluteDirectoryPath)
+	if err != nil {
+		return nil, fmt.Errorf("prepare scan policy for %q: %w", absoluteDirectoryPath, err)
+	}
 
 	analyzer := analyze.CreateAnalyzer()
-	progressDone := make(chan struct{})
+	stopProgress := func() {}
 	if onProgress != nil {
+		progressDone := make(chan struct{})
+		var progressConsumer sync.WaitGroup
+		progressConsumer.Add(1)
 		go func() {
+			defer progressConsumer.Done()
 			for {
 				select {
-				case progress := <-analyzer.GetProgressChan():
+				case progress, ok := <-analyzer.GetProgressChan():
+					if !ok {
+						return
+					}
 					onProgress(modelscanner.ScanProgress{
 						CurrentPath: progress.CurrentItemName,
 						ItemCount:   int64(progress.ItemCount),
@@ -63,19 +78,24 @@ func scanGDUContext(
 				}
 			}
 		}()
+		stopProgress = func() { stopProgressConsumer(progressDone, &progressConsumer) }
 	}
 
 	directory := analyzer.AnalyzeDir(
 		absoluteDirectoryPath,
-		func(_, _ string) bool { return ctx.Err() != nil },
-		func(_ string) bool { return ctx.Err() != nil },
+		policy.ignoreDirectory,
+		policy.ignoreFile,
 	)
-	close(progressDone)
+	stopProgress()
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("analyze directory %q: %w", absoluteDirectoryPath, err)
 	}
 	if directory == nil {
 		return nil, fmt.Errorf("analyze directory %q: gdu returned no directory", absoluteDirectoryPath)
+	}
+	summary := policy.summary()
+	if analyzedDirectory, ok := directory.(*analyze.Dir); ok {
+		collectGDUReadErrors(analyzedDirectory, &summary)
 	}
 	directory.UpdateStats(make(fs.HardLinkedItems, 10))
 
@@ -97,5 +117,29 @@ func scanGDUContext(
 	if err != nil {
 		return nil, fmt.Errorf("parse analysis for directory %q: %w", absoluteDirectoryPath, err)
 	}
+	if summary.Warnings == nil {
+		summary.Warnings = make([]modelscanner.ScanWarning, 0)
+	}
+	tree.ScanSummary = summary
 	return tree, nil
+}
+
+func collectGDUReadErrors(directory *analyze.Dir, summary *modelscanner.ScanSummary) {
+	if directory == nil || summary == nil {
+		return
+	}
+	if directory.GetFlag() == '!' {
+		summary.ReadErrorCount++
+		summary.AddWarning(directory.GetPath(), "read_error")
+	}
+	for _, item := range directory.Files {
+		if child, ok := item.(*analyze.Dir); ok {
+			collectGDUReadErrors(child, summary)
+		}
+	}
+}
+
+func stopProgressConsumer(stop chan struct{}, consumer *sync.WaitGroup) {
+	close(stop)
+	consumer.Wait()
 }

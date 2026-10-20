@@ -26,6 +26,11 @@
     "used": "已使用",
     "total": "总容量",
     "currentUsage": "磁盘占用",
+    "platformInfoFailed": "无法读取平台信息，请手动选择要扫描的目录。",
+    "noCapacityInfo": "该路径没有可用的容量信息",
+    "unknownDisk": "所选磁盘当前不可用",
+    "noDiskList": "当前没有可用的挂载磁盘，仍可选择自定义目录进行扫描。",
+    "diskUsagePercent": "挂载文件系统使用率",
     "historyScan": "历史扫描记录",
     "historyScanDesc": "最近完成的扫描记录",
     "noHistoryRecord": "暂无清理记录"
@@ -40,6 +45,8 @@
     "detail": {
       "foundFiles": "发现的文件",
       "scannedSize": "已扫描大小",
+      "scanIncompleteTitle": "扫描结果不完整",
+      "scanIncomplete": "本次扫描跳过了 {{ excluded }} 个路径，并遇到 {{ errors }} 个读取错误，结果可能不完整。",
       "currentStatus": "状态",
       "diskUsage": "磁盘主要占用",
       "diskUsageDesc": "磁盘主要占用展示了垃圾文件的分布及删除风险等级",

@@ -2,6 +2,8 @@ package data
 
 import (
 	"context"
+	"database/sql"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -10,6 +12,7 @@ import (
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
 	"ai-disk-cleanner/backend/data/models/migration"
 	"ai-disk-cleanner/backend/data/models/setting"
+	modelscanner "ai-disk-cleanner/backend/model/scanner"
 )
 
 func TestGetStoreReturnsSingleton(t *testing.T) {
@@ -34,6 +37,54 @@ func TestGetStoreReturnsSingleton(t *testing.T) {
 	if first != second {
 		t.Fatal("GetStore() returned different Store instances")
 	}
+}
+
+func TestOpenDefaultSQLiteUsesSameDatabaseAcrossWorkingDirectories(t *testing.T) {
+	root := t.TempDir()
+	dataHome := filepath.Join(root, "xdg-data")
+	t.Setenv("XDG_DATA_HOME", dataHome)
+	t.Setenv("HOME", filepath.Join(root, "home"))
+	firstDirectory := filepath.Join(root, "first")
+	secondDirectory := filepath.Join(root, "second")
+	if err := os.MkdirAll(firstDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(secondDirectory, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(firstDirectory)
+	first, err := openDefaultSQLite()
+	if err != nil {
+		t.Fatalf("openDefaultSQLite() in first directory: %v", err)
+	}
+	if err := first.SaveSettings(context.Background(), []setting.Setting{{Key: "test.cwd", Value: "same-database"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(secondDirectory)
+	second, err := openDefaultSQLite()
+	if err != nil {
+		t.Fatalf("openDefaultSQLite() in second directory: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := second.Close(); err != nil {
+			t.Errorf("close() error = %v", err)
+		}
+	})
+	settings, err := second.ListSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range settings {
+		if item.Key == "test.cwd" && item.Value == "same-database" {
+			return
+		}
+	}
+	t.Fatal("second working directory opened a different database")
 }
 
 func TestCleaningRecordRoundTrip(t *testing.T) {
@@ -87,6 +138,83 @@ func TestCleaningRecordRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.TopUsages, record.TopUsages) {
 		t.Errorf("TopUsages = %#v, want %#v", got.TopUsages, record.TopUsages)
+	}
+}
+
+func TestCleaningRecordScanSummaryRoundTripAndCompletionPreservesIt(t *testing.T) {
+	store, err := openSQLite(filepath.Join(t.TempDir(), "summary.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	record := &cleaningrecord.CleaningRecord{
+		StartTime:  time.Now(),
+		TrashFiles: []cleaningrecord.TrashFile{},
+		TopUsages:  []cleaningrecord.DiskUsage{},
+		Path:       "/tmp",
+		State:      cleaningrecord.CLEANING_STATE_SCANNING,
+	}
+	if err := store.CreateCleaningRecord(context.Background(), record); err != nil {
+		t.Fatal(err)
+	}
+	summary := modelscanner.ScanSummary{
+		ExcludedCount:  4,
+		ReadErrorCount: 2,
+		Warnings:       []modelscanner.ScanWarning{{Path: "/tmp/blocked", Code: "read_error"}},
+	}
+	if err := store.SaveCleaningRecordScanSummary(context.Background(), record.ID, summary); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CompleteCleaningRecord(context.Background(), record.ID, &cleaningrecord.AnalysisResult{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.GetCleaningRecord(context.Background(), record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ScanSummary == nil || got.ScanSummary.ExcludedCount != summary.ExcludedCount ||
+		got.ScanSummary.ReadErrorCount != summary.ReadErrorCount || len(got.ScanSummary.Warnings) != 1 ||
+		got.ScanSummary.Warnings[0] != summary.Warnings[0] {
+		t.Fatalf("scan summary after completion = %#v", got.ScanSummary)
+	}
+}
+
+func TestOpeningDatabaseAddsNullableScanSummaryColumn(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "legacy.db")
+	store, err := openSQLite(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := &cleaningrecord.CleaningRecord{StartTime: time.Now(), TrashFiles: []cleaningrecord.TrashFile{}, TopUsages: []cleaningrecord.DiskUsage{}, Path: "/tmp"}
+	if err := store.CreateCleaningRecord(context.Background(), record); err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec("ALTER TABLE cleaning_record DROP COLUMN scan_summary"); err != nil {
+		_ = database.Close()
+		t.Skipf("SQLite driver does not support DROP COLUMN for legacy schema fixture: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := openSQLite(databasePath)
+	if err != nil {
+		t.Fatalf("openSQLite() legacy database error = %v", err)
+	}
+	t.Cleanup(func() { _ = upgraded.Close() })
+	got, err := upgraded.GetCleaningRecord(context.Background(), record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ScanSummary != nil {
+		t.Fatalf("legacy scan summary = %#v, want nil", got.ScanSummary)
 	}
 }
 

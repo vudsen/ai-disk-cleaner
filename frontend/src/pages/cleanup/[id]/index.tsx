@@ -114,6 +114,7 @@ export default function CleanupDetailPage() {
             isRunning={isRunning}
             isStopping={isStopping || Boolean(currentTask?.stopping)}
             scanProgress={currentTask?.scanProgress}
+            scanSummary={detail.scanSummary}
             onStop={() => void stop()}
           />
 
