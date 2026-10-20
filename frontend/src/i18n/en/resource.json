@@ -17,6 +17,24 @@
     "llmNotConfiguredDialogTitle": "LLM configuration required",
     "llmNotConfiguredDialogMessage": "Before starting a scan, configure the LLM secret, URL, and model in Settings.",
     "llmConfigCheckFailed": "Failed to check LLM configuration",
+    "providerStatus": {
+      "config_missing": {
+        "title": "Provider setup is incomplete",
+        "description": "Finish the active provider settings before starting a scan."
+      },
+      "executable_not_found": {
+        "title": "Codex CLI was not found",
+        "description": "Install Codex CLI or select its executable in Settings."
+      },
+      "cli_unsupported": {
+        "title": "Codex CLI version is unsupported",
+        "description": "Use a compatible Codex CLI version and try again."
+      },
+      "not_authenticated": {
+        "title": "Codex CLI needs login",
+        "description": "Run codex login in a terminal, then return to the app."
+      }
+    },
     "goToSettings": "Go to Settings",
     "specDirectory": "Selected directory",
     "specDirectoryPlaceholder": "Select a directory to scan",
@@ -26,6 +44,11 @@
     "used": "Used",
     "total": "Total",
     "currentUsage": "Disk Usage",
+    "platformInfoFailed": "Unable to load platform information; choose a directory to scan.",
+    "noCapacityInfo": "No capacity data for this path",
+    "unknownDisk": "The selected disk is unavailable",
+    "noDiskList": "No mounted disks are available. You can still scan a custom directory.",
+    "diskUsagePercent": "Mounted filesystem usage",
     "historyScan": "History Scan Record",
     "historyScanDesc": "Recent Finished Scan Record",
     "noHistoryRecord": "No Cleaning Record"
@@ -40,6 +63,8 @@
     "detail": {
       "foundFiles": "Found Files",
       "scannedSize": "Scanned Size",
+      "scanIncompleteTitle": "Incomplete Scan",
+      "scanIncomplete": "This scan skipped {{ excluded }} paths and encountered {{ errors }} read errors. Results may be incomplete.",
       "currentStatus": "Status",
       "diskUsage": "Disk Mainly Usage",
       "diskUsageDesc": "Disk mainly usage shows where the trash files separate and the risk level to be delete",
@@ -105,7 +130,11 @@
       "migrateRetryStep": "Retry Step {{ step }}",
       "backToRecords": "Back To Cleanup Records",
       "deleteSuccess": "Delete Success",
-      "deleteSuccessMsg": "{{ path }} deleted"
+      "deleteSuccessMsg": "{{ path }} deleted",
+      "retryAnalysis": "Analyze again",
+      "retryAnalysisDescription": "Uses the saved scan snapshot and current LLM settings without scanning disk. Older records without a snapshot show an explicit error.",
+      "retryAnalysisFailed": "Could not retry analysis",
+      "generating": "Generating"
     }
   },
   "migration": {
@@ -159,6 +188,24 @@
     "maxCleaningRecordDesc": "The exceeded records will be deleted on app startup",
     "llmService": "LLM Service",
     "llmServiceDesc": "Config LLM models, it's used to parse the file system tree",
+    "provider": {
+      "label": "Provider",
+      "api": "OpenAI-compatible API",
+      "apiDescription": "Use an OpenAI-compatible endpoint with its own URL, secret, and model settings.",
+      "codex": "Local Codex CLI",
+      "codexDescription": "Use an installed Codex CLI and its existing terminal login. The app does not install or log in for you."
+    },
+    "codex": {
+      "executable": "Codex executable path",
+      "executableDescription": "Leave empty to find codex on the application PATH. On Windows, choose a native executable rather than a .cmd or .bat wrapper.",
+      "executablePlaceholder": "Optional absolute path to codex",
+      "absolutePathRequired": "Enter an absolute executable path or leave this empty.",
+      "model": "Model override",
+      "modelDescription": "Optional. Leave empty to inherit the model configured in Codex CLI.",
+      "modelPlaceholder": "Use the Codex CLI default model",
+      "timeout": "Analysis timeout (seconds)",
+      "timeoutRange": "Enter a whole number from 30 to 3600 seconds."
+    },
     "testConnection": {
       "button": "Test Connection",
       "confirmTitle": "Test LLM Connection",
@@ -170,7 +217,6 @@
       "thinkingModeEnabled": "You have enabled Thinking Mode. We recommend turning it off, as it will significantly slow down the analysis process and may even cause timeouts!"
     },
     "maxTokenInOneConversation": "Max token in conversation, it is recommended to use between 500,000 and 1,000,000.",
-
     "autoContextCompress": {
       "label": "Smart Context Compression(BETA)",
       "warning": "Enabling this feature will automatically compress the context once it reaches a certain size. It's generally not recommended to enable this feature; it should only be done when the token budget is limited or the context becomes full due to the model itself."
@@ -188,7 +234,10 @@
       "help": "The system language is used on first launch. Your manual selection will be remembered.",
       "zh_CN": "简体中文",
       "en": "English"
-    }
+    },
+    "saved": "Settings saved",
+    "savedDescription": "Your configuration has been updated.",
+    "saveFailed": "Could not save settings"
   },
   "route": {
     "workbench": "Workbench",

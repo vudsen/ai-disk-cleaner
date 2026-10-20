@@ -19,7 +19,7 @@ import {
   Sparkles,
   Square,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { useNavigate } from 'react-router'
 import ControlledNextUIFormWrapper from '@/components/ControlledNextUIFormWrapper'
@@ -31,11 +31,12 @@ import useCleaningTask, {
 } from '@/hooks/useCleaningTask'
 import {
   GetDisks,
-  ListSettings,
+  GetPlatformInfo,
+  GetLLMStatus,
   SelectDirectory,
   StartCleaning,
 } from '../../../wailsjs/go/main/App'
-import type { model, setting } from '../../../wailsjs/go/models'
+import type { model } from '../../../wailsjs/go/models'
 import clsx from 'clsx'
 import { useTranslation } from 'react-i18next'
 import { toastError } from '@/util/toast-error'
@@ -48,39 +49,78 @@ type ScanValues = {
 const hasWailsRuntime = () =>
   typeof window !== 'undefined' && 'go' in window && 'runtime' in window
 
-const requiredLLMSettingKeys = ['llm.secret', 'llm.url', 'llm.model'] as const
+type LLMStatus = {
+  provider: string
+  ready: boolean
+  code: string
+  version: string
+}
 
-function hasCompleteLLMConfiguration(settings: setting.Setting[]) {
-  const values = new Map(settings.map((item) => [item.key, item.value.trim()]))
-  return requiredLLMSettingKeys.every((key) => Boolean(values.get(key)))
+function findContainingDisk(
+  disks: model.DiskInfo[],
+  selectedPath: string,
+  platformOS: string | undefined,
+) {
+  if (!selectedPath) return undefined
+  const windows = platformOS === 'windows'
+  const normalize = (value: string) => {
+    const separator = windows ? '\\' : '/'
+    let path = windows ? value.replaceAll('/', '\\').toLowerCase() : value
+    while (path.length > 1 && path.endsWith(separator)) {
+      path = path.slice(0, -1)
+    }
+    return path
+  }
+  const selected = normalize(selectedPath)
+  return disks
+    .filter((disk) => {
+      const mount = normalize(disk.path)
+      const separator = windows ? '\\' : '/'
+      return (
+        selected === mount ||
+        (mount === separator
+          ? selected.startsWith(separator)
+          : selected.startsWith(`${mount}${separator}`))
+      )
+    })
+    .sort((left, right) => right.path.length - left.path.length)[0]
 }
 
 export default function HomePage() {
   const { i18n, t } = useTranslation()
   const navigate = useNavigate()
-  const { clearErrors, control, getValues, setError, trigger } =
+  const { clearErrors, control, getValues, setError, setValue, trigger } =
     useForm<ScanValues>({
       defaultValues: {
-        target: 'C:\\',
+        target: 'directory',
         directory: '',
       },
     })
   const scanTarget = useWatch({ control, name: 'target' })
+  const selectedDirectory = useWatch({ control, name: 'directory' })
+  const selectionTouched = useRef(false)
+  const selectionInitialized = useRef(false)
   const [isSelectingDirectory, setIsSelectingDirectory] = useState(false)
   const [isCheckingLLM, setIsCheckingLLM] = useState(false)
   const [isLLMConfigured, setIsLLMConfigured] = useState<boolean | null>(null)
+  const [llmStatus, setLLMStatus] = useState<LLMStatus | null>(null)
   const [isStarting, setIsStarting] = useState(false)
   const [startError, setStartError] = useState('')
   const [disks, setDisks] = useState<model.DiskInfo[]>([])
   const [diskError, setDiskError] = useState('')
   const [isLoadingDisks, setIsLoadingDisks] = useState(true)
+  const [platformInfo, setPlatformInfo] = useState<model.PlatformInfo | null>(
+    null,
+  )
   const { error, isLoading, isStopping, records, stop, task } =
     useCleaningTask()
   const isTaskRunning =
     task?.state === 'SCANNING' || task?.state === 'ANALYZING'
+  const activeScanPath =
+    scanTarget === 'directory' ? selectedDirectory : scanTarget
   const systemDisk = useMemo(
-    () => disks.find((disk) => disk.path.toUpperCase() === 'C:\\'),
-    [disks],
+    () => findContainingDisk(disks, activeScanPath, platformInfo?.os),
+    [activeScanPath, disks, platformInfo?.os],
   )
   const usedPercent =
     systemDisk && systemDisk.total > 0
@@ -94,28 +134,63 @@ export default function HomePage() {
     }
 
     let mounted = true
-    void GetDisks()
-      .then((result) => {
+    void Promise.allSettled([GetPlatformInfo(), GetDisks()]).then(
+      ([platformResult, diskResult]) => {
         if (mounted) {
-          setDisks(result ?? [])
-        }
-      })
-      .catch((reason: unknown) => {
-        if (mounted) {
-          setDiskError(
-            reason instanceof Error ? reason.message : String(reason),
-          )
-        }
-      })
-      .finally(() => {
-        if (mounted) {
+          if (platformResult.status === 'fulfilled') {
+            setPlatformInfo(platformResult.value)
+          } else {
+            toastError(platformResult.reason, t('home.platformInfoFailed'))
+          }
+          if (diskResult.status === 'fulfilled') {
+            const availableDisks = diskResult.value ?? []
+            setDisks(availableDisks)
+          } else {
+            setDiskError(String(diskResult.reason))
+          }
+          if (!selectionInitialized.current) {
+            selectionInitialized.current = true
+            if (!selectionTouched.current) {
+              const availableDisks =
+                diskResult.status === 'fulfilled'
+                  ? (diskResult.value ?? [])
+                  : []
+              const defaultDisk =
+                platformResult.status === 'fulfilled'
+                  ? availableDisks.find(
+                      (disk) =>
+                        disk.path === platformResult.value.defaultScanPath,
+                    )
+                  : undefined
+              const firstWindowsDisk =
+                platformResult.status === 'fulfilled' &&
+                platformResult.value.os === 'windows'
+                  ? availableDisks[0]
+                  : undefined
+              const isLinux =
+                platformResult.status === 'fulfilled' &&
+                platformResult.value.os === 'linux'
+              setValue(
+                'target',
+                isLinux
+                  ? 'directory'
+                  : (defaultDisk?.path ??
+                      firstWindowsDisk?.path ??
+                      'directory'),
+              )
+              if (isLinux && platformResult.status === 'fulfilled') {
+                setValue('directory', platformResult.value.homeDirectory)
+              }
+            }
+          }
           setIsLoadingDisks(false)
         }
-      })
+      },
+    )
     return () => {
       mounted = false
     }
-  }, [])
+  }, [setValue, t])
 
   useEffect(() => {
     if (!hasWailsRuntime()) {
@@ -123,10 +198,12 @@ export default function HomePage() {
     }
 
     let mounted = true
-    void ListSettings()
-      .then((settings) => {
+    void GetLLMStatus()
+      .then((status) => {
         if (mounted) {
-          setIsLLMConfigured(hasCompleteLLMConfiguration(settings ?? []))
+          const current = status as LLMStatus
+          setLLMStatus(current)
+          setIsLLMConfigured(current.ready)
         }
       })
       .catch((reason: unknown) => {
@@ -162,14 +239,16 @@ export default function HomePage() {
     if (hasWailsRuntime()) {
       setIsCheckingLLM(true)
       try {
-        const configured = hasCompleteLLMConfiguration(
-          (await ListSettings()) ?? [],
-        )
-        setIsLLMConfigured(configured)
-        if (!configured) {
+        const current = (await GetLLMStatus()) as LLMStatus
+        setLLMStatus(current)
+        setIsLLMConfigured(current.ready)
+        if (!current.ready) {
+          const messageKey = `home.providerStatus.${current.code}`
           showDialog({
             title: t('home.llmNotConfiguredDialogTitle'),
-            message: t('home.llmNotConfiguredDialogMessage'),
+            message: t(messageKey, {
+              defaultValue: t('home.llmNotConfiguredDialogMessage'),
+            }),
             confirmBtnText: t('home.goToSettings'),
             onConfirm: () => navigate('/settings'),
           })
@@ -196,7 +275,7 @@ export default function HomePage() {
         ? values.directory
         : disks.find((disk) => disk.path === values.target)?.path
     if (!path) {
-      setError('target', { message: 'Unknown disk' })
+      setError('target', { message: t('home.unknownDisk') })
       return
     }
 
@@ -228,13 +307,29 @@ export default function HomePage() {
         <Alert status="warning" className="bg-warning/10">
           <Alert.Indicator />
           <Alert.Content>
-            <Alert.Title>{t('home.llmNotConfigured')}</Alert.Title>
+            <Alert.Title>
+              {t(
+                `home.providerStatus.${llmStatus?.code ?? 'config_missing'}.title`,
+              )}
+            </Alert.Title>
             <Alert.Description>
-              {t('home.llmNotConfiguredDescription')}{' '}
+              {t(
+                `home.providerStatus.${llmStatus?.code ?? 'config_missing'}.description`,
+                { defaultValue: t('home.llmNotConfiguredDescription') },
+              )}{' '}
               <Link onPress={() => navigate('/settings')}>
                 {t('home.goToSettings')}
               </Link>
             </Alert.Description>
+          </Alert.Content>
+        </Alert>
+      )}
+
+      {disks.length === 0 && !isLoadingDisks && (
+        <Alert status="default">
+          <Alert.Indicator />
+          <Alert.Content>
+            <Alert.Description>{t('home.noDiskList')}</Alert.Description>
           </Alert.Content>
         </Alert>
       )}
@@ -244,9 +339,6 @@ export default function HomePage() {
           scanTarget === 'directory' ? 'min-h-[30rem]' : 'min-h-80'
         }`}
       >
-        <div className="bg-accent/10 absolute -top-16 -right-12 size-56 rounded-full blur-3xl" />
-        <div className="bg-success/10 absolute -bottom-20 left-1/3 size-64 rounded-full blur-3xl" />
-
         <div className="relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center justify-center text-center">
           <div className="flex max-w-xl flex-col items-center">
             <span className="bg-accent/10 text-accent mb-5 inline-flex size-11 items-center justify-center rounded-xl">
@@ -270,12 +362,15 @@ export default function HomePage() {
               >
                 {(field) => (
                   <Select
-                    isDisabled={isTaskRunning || isStarting || isLoadingDisks}
+                    isDisabled={isTaskRunning || isStarting}
                     selectedKey={field.value}
                     variant="secondary"
-                    onSelectionChange={(key) => field.onChange(key)}
+                    onSelectionChange={(key) => {
+                      selectionTouched.current = true
+                      field.onChange(key)
+                    }}
                   >
-                    <Select.Trigger className="h-12 rounded-xl bg-white/80 shadow-sm backdrop-blur-sm">
+                    <Select.Trigger className="h-12 rounded-xl bg-white/80 shadow-sm">
                       <HardDrive
                         aria-hidden="true"
                         className="text-muted"
@@ -326,7 +421,9 @@ export default function HomePage() {
 
             <Button
               className="mb-1 h-12 shrink-0 gap-2 rounded-xl px-6"
-              isDisabled={isTaskRunning || isStarting || isCheckingLLM}
+              isDisabled={
+                isTaskRunning || isStarting || isCheckingLLM || isLoadingDisks
+              }
               variant="primary"
               onPress={() => void handleStartCleaning()}
             >
@@ -358,7 +455,7 @@ export default function HomePage() {
                 {(field) => (
                   <Button
                     aria-label={t('home.openSysSelector')}
-                    className="h-12 w-full justify-start gap-3 rounded-xl bg-white/80 px-4 shadow-sm backdrop-blur-sm"
+                    className="h-12 w-full justify-start gap-3 rounded-xl bg-white/80 px-4 shadow-sm"
                     isDisabled={isSelectingDirectory}
                     variant="secondary"
                     onPress={() => void handleSelectDirectory(field.onChange)}
@@ -438,7 +535,7 @@ export default function HomePage() {
             <div>
               <Card.Title>{t('home.currentUsage')}</Card.Title>
               <Card.Description>
-                {systemDisk?.name ?? '本地磁盘 (C:)'}
+                {systemDisk?.name ?? t('home.noCapacityInfo')}
               </Card.Description>
             </div>
             <span className="bg-default/60 text-muted inline-flex size-9 items-center justify-center rounded-xl">
@@ -469,7 +566,7 @@ export default function HomePage() {
               </div>
 
               <ProgressBar
-                aria-label="本地磁盘使用率"
+                aria-label={t('home.diskUsagePercent')}
                 className="mt-4"
                 color={usageColor}
                 value={usedPercent}

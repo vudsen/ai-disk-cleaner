@@ -1,4 +1,4 @@
-import { Button, Chip, ProgressBar } from '@heroui/react'
+import { Alert, Button, Chip, ProgressBar } from '@heroui/react'
 import {
   AlertCircle,
   Clock3,
@@ -17,11 +17,13 @@ type ScanProgressHeaderProps = {
     path: string
     startTime: unknown
     state: string
+    scanSummary?: scanner.ScanSummary | null
   }
   isRunning: boolean
   isStopping: boolean
   onStop: () => void
   scanProgress?: scanner.ScanProgress | null
+  scanSummary?: scanner.ScanSummary | null
 }
 
 export default function ScanProgressHeader({
@@ -30,11 +32,11 @@ export default function ScanProgressHeader({
   isStopping,
   onStop,
   scanProgress,
+  scanSummary,
 }: ScanProgressHeaderProps) {
   const { t } = useTranslation()
   return (
     <div className="from-accent/10 via-accent/5 to-success/10 relative overflow-hidden rounded-2xl bg-linear-to-br p-7">
-      <div className="bg-accent/10 absolute -top-16 right-8 size-48 rounded-full blur-3xl" />
       <div className="relative flex items-start justify-between gap-6">
         <div className="flex min-w-0 items-start gap-4">
           <span className="bg-accent text-accent-foreground inline-flex size-12 shrink-0 items-center justify-center rounded-2xl shadow-sm">
@@ -121,13 +123,30 @@ export default function ScanProgressHeader({
           {detail.errorMessage}
         </div>
       )}
+      {scanSummary &&
+        (scanSummary.excludedCount > 0 || scanSummary.readErrorCount > 0) && (
+          <Alert status="warning" className="bg-warning/10 mt-5">
+            <Alert.Indicator />
+            <Alert.Content>
+              <Alert.Title>
+                {t('cleanup.detail.scanIncompleteTitle')}
+              </Alert.Title>
+              <Alert.Description>
+                {t('cleanup.detail.scanIncomplete', {
+                  excluded: scanSummary.excludedCount,
+                  errors: scanSummary.readErrorCount,
+                })}
+              </Alert.Description>
+            </Alert.Content>
+          </Alert>
+        )}
     </div>
   )
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-white/70 p-4 backdrop-blur-sm">
+    <div className="rounded-2xl bg-white/70 p-4">
       <p className="text-muted flex items-center gap-1 text-xs">{label}</p>
       <p className="text-foreground mt-1 text-base font-semibold">{value}</p>
     </div>

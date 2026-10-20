@@ -13,11 +13,14 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"ai-disk-cleanner/backend/util"
 )
 
 // Service is assembled and owned by the root service manager.
 type Service struct {
-	executable func() (string, error)
+	executable   func() (string, error)
+	logDirectory func() (string, error)
 }
 
 // Session owns one task's output. Its zero value and nil pointer are safe no-ops.
@@ -31,18 +34,23 @@ type Session struct {
 	closed     bool
 }
 
-func NewService() *Service { return &Service{executable: os.Executable} }
+func NewService() *Service {
+	return &Service{executable: os.Executable, logDirectory: util.LogDirectoryPath}
+}
 
 // Open never turns a logging failure into a task failure.
 func (service *Service) Open(start time.Time, path string) *Session {
 	session := &Session{started: start}
 	filename, err := service.filename(start)
 	if err == nil {
-		err = os.MkdirAll(filepath.Dir(filename), 0755)
+		err = os.MkdirAll(filepath.Dir(filename), 0700)
+		if err == nil {
+			err = os.Chmod(filepath.Dir(filename), 0700)
+		}
 	}
 	if err == nil {
 		var file *os.File
-		file, err = os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		file, err = os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err == nil {
 			session.file = file
 		}

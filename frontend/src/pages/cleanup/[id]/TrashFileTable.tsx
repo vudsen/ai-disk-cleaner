@@ -66,7 +66,7 @@ export default function TrashFileTable({
           break
         case 'migrate-file':
           setMigrationTarget({
-            name: pathName(fullPath),
+            name: pathName(fullPath, rootPath),
             source: fullPath,
           })
           break
@@ -213,13 +213,11 @@ export default function TrashFileTable({
   )
 }
 
-function pathName(path: string) {
-  return (
-    path
-      .replace(/[\\/]+$/, '')
-      .split(/[\\/]/)
-      .pop() || path
-  )
+function pathName(path: string, rootPath: string) {
+  const windows = isWindowsTreeRoot(rootPath)
+  const trailingSeparators = windows ? /[\\/]+$/ : /\/+$/
+  const separators = windows ? /[\\/]/ : /\//
+  return path.replace(trailingSeparators, '').split(separators).pop() || path
 }
 
 function resolvePath(rootPath: string, relativePath: string) {
@@ -230,12 +228,21 @@ function resolvePath(rootPath: string, relativePath: string) {
     return rootPath
   }
 
-  const separator = rootPath.includes('\\') ? '\\' : '/'
-  const root = rootPath.replace(/[\\/]+$/, '')
-  const relative = relativePath
-    .replace(/^[\\/]+/, '')
-    .replace(/[\\/]+/g, separator)
+  const windows = isWindowsTreeRoot(rootPath)
+  const separator = windows ? '\\' : '/'
+  const root = rootPath.replace(windows ? /[\\/]+$/ : /\/+$/, '')
+  const relative = windows
+    ? relativePath.replace(/^[\\/]+/, '').replace(/[\\/]+/g, separator)
+    : relativePath.replace(/^\/+/, '')
   return `${root}${separator}${relative}`
+}
+
+function isWindowsTreeRoot(rootPath: string) {
+  return (
+    /^[a-zA-Z]:[\\/]/.test(rootPath) ||
+    rootPath.startsWith('\\\\') ||
+    rootPath.startsWith('//')
+  )
 }
 
 function levelLabel(level: number) {

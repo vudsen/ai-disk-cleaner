@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"ai-disk-cleanner/backend/util"
 )
 
 func samePath(left string, right string) bool {
 	leftPath, leftErr := filepath.Abs(left)
 	rightPath, rightErr := filepath.Abs(right)
-	return leftErr == nil && rightErr == nil && strings.EqualFold(filepath.Clean(leftPath), filepath.Clean(rightPath))
+	return leftErr == nil && rightErr == nil && util.SamePath(leftPath, rightPath)
 }
 
 func validateDirectory(directoryPath string) (string, error) {

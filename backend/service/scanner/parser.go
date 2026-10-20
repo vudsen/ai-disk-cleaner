@@ -119,7 +119,7 @@ func decodeDirectoryBody(decoder *json.Decoder, parent *modelscanner.FileNode, r
 	rootPath := ""
 	if root {
 		rootPath = rawName
-		metadata.Name = baseName(rawName)
+		metadata.Name = modelscanner.TreePathBaseName(rawName)
 	}
 	if metadata.Name == "" {
 		return nil, "", errors.New("directory name must not be empty")
@@ -312,14 +312,7 @@ func normalizeTreePath(treePath string) string {
 }
 
 func baseName(value string) string {
-	trimmed := strings.TrimRight(value, `/\`)
-	if trimmed == "" {
-		return value
-	}
-	if index := strings.LastIndexAny(trimmed, `/\`); index >= 0 {
-		return trimmed[index+1:]
-	}
-	return trimmed
+	return modelscanner.TreePathBaseName(value)
 }
 
 func joinDisplayPath(parent, name string) string {

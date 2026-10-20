@@ -30,6 +30,14 @@ export function GetDisks() {
   return window['go']['main']['App']['GetDisks']();
 }
 
+export function GetLLMStatus() {
+  return window['go']['main']['App']['GetLLMStatus']();
+}
+
+export function GetPlatformInfo() {
+  return window['go']['main']['App']['GetPlatformInfo']();
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
@@ -56,6 +64,10 @@ export function OpenTrashFileDirectory(arg1) {
 
 export function RestoreMigration(arg1) {
   return window['go']['main']['App']['RestoreMigration'](arg1);
+}
+
+export function RetryCleaning(arg1, arg2) {
+  return window['go']['main']['App']['RetryCleaning'](arg1, arg2);
 }
 
 export function SaveSettings(arg1) {

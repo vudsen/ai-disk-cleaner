@@ -47,7 +47,6 @@ export default function CleanupPage() {
           <Card className="overflow-hidden rounded-3xl">
             <Card.Content className="p-0">
               <div className="from-accent/10 via-accent/5 to-success/10 relative overflow-hidden bg-linear-to-br p-7">
-                <div className="bg-accent/10 absolute -top-16 right-8 size-48 rounded-full blur-3xl" />
                 <div className="relative flex items-center gap-5">
                   <span className="bg-accent text-accent-foreground inline-flex size-12 shrink-0 items-center justify-center rounded-2xl shadow-sm">
                     <FolderSearch

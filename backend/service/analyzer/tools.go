@@ -120,12 +120,11 @@ func (tool *addTopUsagesTool) IsSupport(agent *Agent) bool {
 }
 
 func (tool *addTopUsagesTool) invoke(agent *Agent, parameter string) (string, error) {
-	var v addTopUsagesParameters
-	err := json.Unmarshal([]byte(parameter), &v)
+	usages, err := decodeTopUsages(parameter)
 	if err != nil {
 		return "", err
 	}
-	agent.TopUsages = v.Usages
+	agent.TopUsages = usages
 	return "true", nil
 }
 
@@ -173,12 +172,35 @@ func (tool *addTrashFileTool) IsSupport(agent *Agent) bool {
 }
 
 func (tool *addTrashFileTool) invoke(agent *Agent, parameter string) (string, error) {
-	var v addTrashFileParameters
-	if err := json.Unmarshal([]byte(parameter), &v); err != nil {
+	files, err := decodeTrashFiles(parameter)
+	if err != nil {
 		return "", err
 	}
-	agent.TrashFiles = removeNestedTrashFiles(append(agent.TrashFiles, v.Files...))
+	agent.TrashFiles = mergeTrashFiles(agent.TrashFiles, files)
 	return "true", nil
+}
+
+func decodeTopUsages(parameter string) ([]cleaningrecord.DiskUsage, error) {
+	var values addTopUsagesParameters
+	if err := json.Unmarshal([]byte(parameter), &values); err != nil {
+		return nil, err
+	}
+	return values.Usages, nil
+}
+
+func decodeTrashFiles(parameter string) ([]cleaningrecord.TrashFile, error) {
+	var values addTrashFileParameters
+	if err := json.Unmarshal([]byte(parameter), &values); err != nil {
+		return nil, err
+	}
+	return values.Files, nil
+}
+
+func mergeTrashFiles(existing, incoming []cleaningrecord.TrashFile) []cleaningrecord.TrashFile {
+	combined := make([]cleaningrecord.TrashFile, 0, len(existing)+len(incoming))
+	combined = append(combined, existing...)
+	combined = append(combined, incoming...)
+	return removeNestedTrashFiles(combined)
 }
 
 func removeNestedTrashFiles(files []cleaningrecord.TrashFile) []cleaningrecord.TrashFile {
@@ -280,16 +302,15 @@ func (g *analyzeDirectoryTool) invoke(agent *Agent, parameter string) (string, e
 	if !strings.HasPrefix(args.Path, "/") {
 		return "", fmt.Errorf("path must start with '/': %q", args.Path)
 	}
-	if strings.Contains(args.Path, `\`) {
-		return "", fmt.Errorf("path must use '/' as its separator: %q", args.Path)
-	}
+	treePath := modelscanner.NormalizeTreePathForRoot(agent.tree.RootPath, args.Path)
+	return renderDirectoryUsageCSV(agent.tree, treePath)
+}
 
-	treePath := modelscanner.NormalizeTreePath(args.Path)
-	node, err := agent.tree.FindNode(treePath)
+func renderDirectoryUsageCSV(tree *modelscanner.FileTree, treePath string) (string, error) {
+	node, err := tree.FindNode(treePath)
 	if err != nil {
 		return "", err
 	}
-
 	entries := collectDirectoryUsage(node, treePath)
 
 	var buffer bytes.Buffer

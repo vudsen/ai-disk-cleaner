@@ -124,3 +124,95 @@ jobs:
             $checksumPath `
             --clobber `
             --repo $env:GITHUB_REPOSITORY
+
+  linux-release:
+    name: Build Linux release
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Read project version
+        id: project
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="$(node -p "require('./project.json').version")"
+          if [[ ! "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]]; then
+            echo "project.json contains an invalid artifact version: $version" >&2
+            exit 1
+          fi
+          expected_tag="v$version"
+          if [[ "$RELEASE_TAG" != "$expected_tag" ]]; then
+            echo "Release tag '$RELEASE_TAG' differs from project version tag '$expected_tag'." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=ai-disk-cleaner-v$version-linux-amd64" >> "$GITHUB_OUTPUT"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install Linux native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
+      - name: Build Linux application
+        run: wails build -platform linux/amd64 -tags webkit2_41 -o ai-disk-cleaner -trimpath -m
+
+      - name: Package Linux application
+        env:
+          ARTIFACT_NAME: ${{ steps.project.outputs.artifact_name }}
+        run: |
+          staging="$(mktemp -d)"
+          mkdir -p "$staging/$ARTIFACT_NAME"
+          install -m 0755 build/bin/ai-disk-cleaner "$staging/$ARTIFACT_NAME/ai-disk-cleaner"
+          install -m 0644 README.md "$staging/$ARTIFACT_NAME/README.md"
+          tar -C "$staging" -czf "build/bin/$ARTIFACT_NAME.tar.gz" "$ARTIFACT_NAME"
+          sha256sum "build/bin/$ARTIFACT_NAME.tar.gz" > "build/bin/$ARTIFACT_NAME.tar.gz.sha256"
+
+      - name: Generate artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-path: build/bin/${{ steps.project.outputs.artifact_name }}.tar.gz
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          ARTIFACT_NAME: ${{ steps.project.outputs.artifact_name }}
+        run: |
+          gh release upload \
+            "$RELEASE_TAG" \
+            "build/bin/$ARTIFACT_NAME.tar.gz" \
+            "build/bin/$ARTIFACT_NAME.tar.gz.sha256" \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"

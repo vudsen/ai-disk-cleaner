@@ -8,6 +8,7 @@ import (
 	"ai-disk-cleanner/backend/service/cleaner"
 	"ai-disk-cleanner/backend/service/cleaninghistory"
 	"ai-disk-cleanner/backend/service/migration"
+	"ai-disk-cleanner/backend/service/platform"
 	"ai-disk-cleanner/backend/service/scanner"
 	"ai-disk-cleanner/backend/service/setting"
 	"ai-disk-cleanner/backend/service/tasklog"
@@ -23,6 +24,7 @@ func TestGettersPanicBeforeInitialization(t *testing.T) {
 		func() { GetScannerService() },
 		func() { GetSettingService() },
 		func() { GetTaskLogService() },
+		func() { GetPlatformService() },
 	}
 	for _, getter := range getters {
 		assertPanics(t, getter)
@@ -39,6 +41,7 @@ func TestInitializePublishesEveryService(t *testing.T) {
 		scanner:         &scanner.Service{},
 		setting:         &setting.Service{},
 		taskLog:         &tasklog.Service{},
+		platform:        &platform.Service{},
 	}
 	buildServices = func() (services, error) { return want, nil }
 
@@ -50,7 +53,7 @@ func TestInitializePublishesEveryService(t *testing.T) {
 		GetCleaningHistoryService() != want.cleaningHistory ||
 		GetMigrationService() != want.migration ||
 		GetScannerService() != want.scanner ||
-		GetSettingService() != want.setting || GetTaskLogService() != want.taskLog {
+		GetSettingService() != want.setting || GetTaskLogService() != want.taskLog || GetPlatformService() != want.platform {
 		t.Fatal("a getter returned a different service instance")
 	}
 	assertPanics(t, func() { _ = Initialize() })
@@ -78,6 +81,7 @@ func resetManagerForTest(t *testing.T) {
 	scannerService = nil
 	settingService = nil
 	taskLogService = nil
+	platformService = nil
 	buildServices = setupServices
 	t.Cleanup(func() {
 		initializationAttempted = false
@@ -88,6 +92,7 @@ func resetManagerForTest(t *testing.T) {
 		scannerService = nil
 		settingService = nil
 		taskLogService = nil
+		platformService = nil
 		buildServices = setupServices
 	})
 }

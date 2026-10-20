@@ -20,6 +20,21 @@ func TestParseGDUContextHonoursCancellation(t *testing.T) {
 	}
 }
 
+func TestPOSIXTreePreservesBackslashFilename(t *testing.T) {
+	const report = `[1,2,{"progname":"gdu","progver":"v5","timestamp":0},[{"name":"/tmp/中文 root"},{"name":"a\\b.txt","asize":7,"dsize":7}]]`
+	tree, err := parseGDUJSON(strings.NewReader(report))
+	if err != nil {
+		t.Fatalf("parseGDUJSON() error = %v", err)
+	}
+	node, err := tree.FindNode(`a\b.txt`)
+	if err != nil {
+		t.Fatalf("FindNode() error = %v", err)
+	}
+	if node.Name != `a\b.txt` || node.FullPath != `/tmp/中文 root/a\b.txt` {
+		t.Fatalf("node path = name %q, full %q", node.Name, node.FullPath)
+	}
+}
+
 const testReport = `[1,2,{"progname":"gdu","progver":"v5.36.1","timestamp":1784024360},
 [{"name":"C:\\Users\\tester\\AppData\\Local\\arthas-ui","mtime":1750929535},
 {"name":"tc_version.txt","asize":1,"dsize":2,"mtime":1750929532,"unknown":"ignored"},

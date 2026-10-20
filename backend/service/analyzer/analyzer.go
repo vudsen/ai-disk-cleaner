@@ -9,13 +9,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openai/openai-go/v3"
 )
 
 // Service implements the LLM analysis service with an OpenAI-compatible API.
 type Service struct {
-	settings settingStore
+	settings         settingStore
+	codexStatusProbe func(context.Context, *codexConfig) (ProviderStatus, error)
+}
+
+// ProviderStatus describes local readiness; it is not proof of model access.
+type ProviderStatus struct {
+	Provider string `json:"provider"`
+	Ready    bool   `json:"ready"`
+	Code     string `json:"code"`
+	Version  string `json:"version"`
 }
 
 // TestConnectionResult describes the outcome of an LLM connection test.
@@ -37,7 +47,53 @@ func NewService(settings settingStore) *Service {
 }
 
 func newService(settings settingStore) *Service {
-	return &Service{settings: settings}
+	return &Service{settings: settings, codexStatusProbe: probeCodexStatus}
+}
+
+// GetStatus reports whether the active provider is configured and locally ready.
+func (analyzer *Service) GetStatus(ctx context.Context) (ProviderStatus, error) {
+	if analyzer.settings == nil {
+		return ProviderStatus{}, errors.New("get LLM status: setting store is nil")
+	}
+	settings, err := analyzer.settings.ListSettings(ctx)
+	if err != nil {
+		return ProviderStatus{}, fmt.Errorf("get LLM status: %w", err)
+	}
+	values := make(map[string]string, len(settings))
+	for _, item := range settings {
+		values[item.Key] = item.Value
+	}
+	provider := strings.TrimSpace(values["llm.provider"])
+	if provider == "" {
+		provider = string(providerAPI)
+	}
+	switch provider {
+	case string(providerAPI):
+		ready := strings.TrimSpace(values["llm.secret"]) != "" &&
+			strings.TrimSpace(values["llm.url"]) != "" &&
+			strings.TrimSpace(values["llm.model"]) != ""
+		code := "ready"
+		if !ready {
+			code = "config_missing"
+		}
+		return ProviderStatus{Provider: provider, Ready: ready, Code: code}, nil
+	case string(providerCodex):
+		config, err := parseProviderConfig(settings)
+		if err != nil {
+			return ProviderStatus{Provider: provider, Code: "config_missing"}, nil
+		}
+		if analyzer.codexStatusProbe == nil {
+			return ProviderStatus{}, errors.New("get Codex status: status probe is unavailable")
+		}
+		status, err := analyzer.codexStatusProbe(ctx, config.codex)
+		status.Provider = provider
+		if err != nil {
+			return status, err
+		}
+		return status, nil
+	default:
+		return ProviderStatus{Provider: provider, Code: "config_missing"}, nil
+	}
 }
 
 func (analyzer *Service) Analyze(
@@ -53,10 +109,17 @@ func (analyzer *Service) Analyze(
 	if onDelta == nil {
 		onDelta = func(string) {}
 	}
-	config, err := analyzer.loadLLMConfig(ctx)
+	provider, err := analyzer.loadProviderConfig(ctx)
 	if err != nil {
 		return nil, err
 	}
+	if provider.provider == providerCodex {
+		if session != nil {
+			session.Event("分析开始", "本地 Codex CLI 语言=%s", language)
+		}
+		return analyzer.analyzeWithCodex(ctx, tree, language, onDelta, session, provider.codex)
+	}
+	config := provider.api
 	prompt := buildBaseSystemPrompt(config.autoContextCompressEnabled)
 	session.Event("分析开始", "模型=%s 语言=%s Token预算=%d 自动压缩=%t", config.model, language, config.maxTokens, config.autoContextCompressEnabled)
 	agent, err := newAgent(ctx, tree, prompt, onDelta, config, language)
@@ -73,10 +136,14 @@ func (analyzer *Service) Analyze(
 
 // TestConnection sends a minimal request using the supplied, potentially unsaved settings.
 func (analyzer *Service) TestConnection(ctx context.Context, settings []setting.Setting) (TestConnectionResult, error) {
-	config, err := parseLLMConfig(settings)
+	provider, err := parseProviderConfig(settings)
 	if err != nil {
 		return TestConnectionResult{}, err
 	}
+	if provider.provider == providerCodex {
+		return analyzer.testCodexConnection(ctx, provider.codex)
+	}
+	config := provider.api
 
 	params := openai.ChatCompletionNewParams{
 		Messages: []openai.ChatCompletionMessageParamUnion{

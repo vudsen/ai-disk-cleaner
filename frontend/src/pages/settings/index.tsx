@@ -8,7 +8,6 @@ import {
   ListBox,
   Select,
   TextArea,
-  toast,
 } from '@heroui/react'
 import {
   Bot,
@@ -19,7 +18,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import type { setting } from '../../../wailsjs/go/models'
 import {
@@ -30,6 +29,7 @@ import {
 import ControlledNextUIFormWrapper from '@/components/ControlledNextUIFormWrapper'
 import { showDialog } from '@/components/DialogProvider'
 import { toastError } from '@/util/toast-error'
+import { toast } from '@/util/toast'
 import i18n, {
   changeLanguage,
   supportedLanguages,
@@ -38,23 +38,31 @@ import i18n, {
 
 type SettingValues = {
   language: SupportedLanguage
+  llmProvider: 'api' | 'codex'
   llmSecret: string
   llmURL: string
   llmModel: string
   llmMaxToken: string
   llmAutoContextCompress: string
   llmExtraBody: string
+  codexExecutable: string
+  codexModel: string
+  codexTimeoutSeconds: string
   recordMaxCount: string
 }
 
 const initialValues: SettingValues = {
   language: i18n.resolvedLanguage as SupportedLanguage,
+  llmProvider: 'api',
   llmSecret: '',
   llmURL: '',
   llmModel: '',
   llmMaxToken: '50000',
   llmAutoContextCompress: 'false',
   llmExtraBody: '',
+  codexExecutable: '',
+  codexModel: '',
+  codexTimeoutSeconds: '600',
   recordMaxCount: '10',
 }
 
@@ -70,18 +78,23 @@ function valuesFromSettings(
   )
   return {
     language,
+    llmProvider: values.get('llm.provider') === 'codex' ? 'codex' : 'api',
     llmSecret: values.get('llm.secret') ?? '',
     llmURL: values.get('llm.url') ?? '',
     llmModel: values.get('llm.model') ?? '',
     llmMaxToken: values.get('llm.max-token') ?? '50000',
     llmAutoContextCompress: values.get('llm.auto-context-compress') ?? 'false',
     llmExtraBody: values.get('llm.extra-body') ?? '',
+    codexExecutable: values.get('codex.executable') ?? '',
+    codexModel: values.get('codex.model') ?? '',
+    codexTimeoutSeconds: values.get('codex.timeout-seconds') ?? '600',
     recordMaxCount: values.get('record.max.count') ?? '10',
   }
 }
 
 function settingsFromValues(values: SettingValues): setting.Setting[] {
   return [
+    { key: 'llm.provider', value: values.llmProvider },
     { key: 'llm.secret', value: values.llmSecret },
     { key: 'llm.url', value: values.llmURL.trim() },
     { key: 'llm.model', value: values.llmModel.trim() },
@@ -91,6 +104,9 @@ function settingsFromValues(values: SettingValues): setting.Setting[] {
       value: values.llmAutoContextCompress,
     },
     { key: 'llm.extra-body', value: values.llmExtraBody.trim() },
+    { key: 'codex.executable', value: values.codexExecutable.trim() },
+    { key: 'codex.model', value: values.codexModel.trim() },
+    { key: 'codex.timeout-seconds', value: values.codexTimeoutSeconds.trim() },
     { key: 'record.max.count', value: values.recordMaxCount.trim() },
   ]
 }
@@ -99,10 +115,12 @@ export default function SettingsPage() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isTesting, setIsTesting] = useState(false)
   const [loadError, setLoadError] = useState('')
   const { control, getValues, reset, trigger } = useForm<SettingValues>({
     defaultValues: initialValues,
   })
+  const provider = useWatch({ control, name: 'llmProvider' })
 
   const load = useCallback(async () => {
     if (!hasWailsRuntime()) {
@@ -131,7 +149,18 @@ export default function SettingsPage() {
   }, [load])
 
   const save = async () => {
-    if (!(await trigger())) {
+    const fields: (keyof SettingValues)[] =
+      provider === 'codex'
+        ? ['codexExecutable', 'codexTimeoutSeconds', 'recordMaxCount']
+        : [
+            'llmSecret',
+            'llmURL',
+            'llmModel',
+            'llmMaxToken',
+            'llmExtraBody',
+            'recordMaxCount',
+          ]
+    if (!(await trigger(fields))) {
       return
     }
 
@@ -140,34 +169,35 @@ export default function SettingsPage() {
     try {
       await SaveSettings(settingsFromValues(values))
       reset(values)
-      toast('设置已保存', {
-        description: '配置已更新',
+      toast(t('settings.saved'), {
+        description: t('settings.savedDescription'),
         variant: 'success',
       })
     } catch (reason) {
-      toastError(reason, '保存设置失败')
+      toastError(reason, t('settings.saveFailed'))
     } finally {
       setIsSaving(false)
     }
   }
 
   const testConnection = async () => {
-    if (
-      !(await trigger([
-        'llmSecret',
-        'llmURL',
-        'llmModel',
-        'llmMaxToken',
-        'llmExtraBody',
-      ]))
-    ) {
+    const valid =
+      provider === 'codex'
+        ? await trigger(['codexExecutable', 'codexTimeoutSeconds'])
+        : await trigger([
+            'llmSecret',
+            'llmURL',
+            'llmModel',
+            'llmMaxToken',
+            'llmExtraBody',
+          ])
+    if (!valid) {
       return
     }
 
+    setIsTesting(true)
     try {
       const result = await TestLLMConnection(settingsFromValues(getValues()))
-      console.log(result.type)
-      console.log(result.type === 'warning')
       if (result.type === 'warning') {
         setTimeout(() => {
           showDialog({
@@ -186,6 +216,8 @@ export default function SettingsPage() {
       })
     } catch (reason) {
       toastError(reason, t('settings.testConnection.failed'))
+    } finally {
+      setIsTesting(false)
     }
   }
 
@@ -297,133 +329,241 @@ export default function SettingsPage() {
           <div className="col-span-2">
             <ControlledNextUIFormWrapper
               control={control}
-              description="LLM Secret"
-              label="LLM Secret"
-              rules={{ required: true }}
-              name="llmSecret"
-            >
-              <Input disabled={isSaving} type="password" placeholder="sk-xxx" />
-            </ControlledNextUIFormWrapper>
-          </div>
-          <div className="col-span-2">
-            <ControlledNextUIFormWrapper
-              control={control}
-              description="Model API Url"
-              label="LLM URL"
-              rules={{ required: true }}
-              name="llmURL"
-            >
-              <Input
-                disabled={isSaving}
-                placeholder="https://api.example.com/v1"
-                type="url"
-              />
-            </ControlledNextUIFormWrapper>
-          </div>
-          <ControlledNextUIFormWrapper
-            control={control}
-            description="Modeal name"
-            label="LLM Model"
-            rules={{ required: true }}
-            name="llmModel"
-          >
-            <Input disabled={isSaving} placeholder="gpt-5" />
-          </ControlledNextUIFormWrapper>
-          <ControlledNextUIFormWrapper
-            control={control}
-            description={t('settings.maxTokenInOneConversation')}
-            label="LLM Max Token"
-            name="llmMaxToken"
-            rules={{
-              validate: (value) => {
-                const maxToken = Number(value)
-                return (
-                  (Number.isSafeInteger(maxToken) && maxToken > 0) ||
-                  t('validation.gt0')
-                )
-              },
-            }}
-          >
-            <Input
-              disabled={isSaving}
-              inputMode="numeric"
-              min={1}
-              step={1}
-              type="number"
-            />
-          </ControlledNextUIFormWrapper>
-          <div className="col-span-2">
-            <ControlledNextUIFormWrapper
-              control={control}
-              name="llmAutoContextCompress"
+              label={t('settings.provider.label')}
+              name="llmProvider"
             >
               {(field) => (
-                <div className="space-y-2">
-                  <Checkbox
-                    isDisabled={isSaving}
-                    isSelected={field.value === 'true'}
-                    onChange={(value) => field.onChange(String(value))}
-                  >
-                    <Checkbox.Content>
-                      <Checkbox.Control>
-                        <Checkbox.Indicator />
-                      </Checkbox.Control>
-                      <Label>{t('settings.autoContextCompress.label')}</Label>
-                    </Checkbox.Content>
-                  </Checkbox>
-                  {field.value === 'true' && (
-                    <p className="text-warning text-sm">
-                      {t('settings.autoContextCompress.warning')}
-                    </p>
-                  )}
-                </div>
+                <Select
+                  selectedKey={field.value}
+                  variant="secondary"
+                  onSelectionChange={(key) => field.onChange(key)}
+                >
+                  <Select.Trigger className="rounded-xl">
+                    <Select.Value />
+                    <Select.Indicator />
+                  </Select.Trigger>
+                  <Select.Popover>
+                    <ListBox>
+                      <ListBox.Item
+                        id="api"
+                        textValue={t('settings.provider.api')}
+                      >
+                        {t('settings.provider.api')}
+                      </ListBox.Item>
+                      <ListBox.Item
+                        id="codex"
+                        textValue={t('settings.provider.codex')}
+                      >
+                        {t('settings.provider.codex')}
+                      </ListBox.Item>
+                    </ListBox>
+                  </Select.Popover>
+                </Select>
               )}
             </ControlledNextUIFormWrapper>
+            <p className="text-muted mt-2 text-sm">
+              {t(`settings.provider.${provider}Description`)}
+            </p>
           </div>
-          <div className="col-span-2">
-            <ControlledNextUIFormWrapper
-              control={control}
-              description={t('settings.llmExtraBody.description')}
-              label={t('settings.llmExtraBody.label')}
-              name="llmExtraBody"
-              rules={{
-                validate: (value) => {
-                  if (!value.trim()) {
-                    return true
-                  }
-                  try {
-                    const parsed: unknown = JSON.parse(value)
+          {provider === 'api' ? (
+            <>
+              <div className="col-span-2">
+                <ControlledNextUIFormWrapper
+                  control={control}
+                  description="LLM Secret"
+                  label="LLM Secret"
+                  rules={{ required: true }}
+                  name="llmSecret"
+                >
+                  <Input
+                    disabled={isSaving}
+                    type="password"
+                    placeholder="sk-xxx"
+                  />
+                </ControlledNextUIFormWrapper>
+              </div>
+              <div className="col-span-2">
+                <ControlledNextUIFormWrapper
+                  control={control}
+                  description="Model API Url"
+                  label="LLM URL"
+                  rules={{ required: true }}
+                  name="llmURL"
+                >
+                  <Input
+                    disabled={isSaving}
+                    placeholder="https://api.example.com/v1"
+                    type="url"
+                  />
+                </ControlledNextUIFormWrapper>
+              </div>
+              <ControlledNextUIFormWrapper
+                control={control}
+                description="Modeal name"
+                label="LLM Model"
+                rules={{ required: true }}
+                name="llmModel"
+              >
+                <Input disabled={isSaving} placeholder="gpt-5" />
+              </ControlledNextUIFormWrapper>
+              <ControlledNextUIFormWrapper
+                control={control}
+                description={t('settings.maxTokenInOneConversation')}
+                label="LLM Max Token"
+                name="llmMaxToken"
+                rules={{
+                  validate: (value) => {
+                    const maxToken = Number(value)
                     return (
-                      (typeof parsed === 'object' &&
-                        parsed !== null &&
-                        !Array.isArray(parsed)) ||
-                      t('settings.llmExtraBody.invalid')
+                      (Number.isSafeInteger(maxToken) && maxToken > 0) ||
+                      t('validation.gt0')
                     )
-                  } catch {
-                    return t('settings.llmExtraBody.invalid')
-                  }
-                },
-              }}
-            >
-              <TextArea
-                disabled={isSaving}
-                placeholder='{"thinking": {"type": "disabled"}}'
-              />
-            </ControlledNextUIFormWrapper>
-          </div>
+                  },
+                }}
+              >
+                <Input
+                  disabled={isSaving}
+                  inputMode="numeric"
+                  min={1}
+                  step={1}
+                  type="number"
+                />
+              </ControlledNextUIFormWrapper>
+              <div className="col-span-2">
+                <ControlledNextUIFormWrapper
+                  control={control}
+                  name="llmAutoContextCompress"
+                >
+                  {(field) => (
+                    <div className="space-y-2">
+                      <Checkbox
+                        isDisabled={isSaving}
+                        isSelected={field.value === 'true'}
+                        onChange={(value) => field.onChange(String(value))}
+                      >
+                        <Checkbox.Content>
+                          <Checkbox.Control>
+                            <Checkbox.Indicator />
+                          </Checkbox.Control>
+                          <Label>
+                            {t('settings.autoContextCompress.label')}
+                          </Label>
+                        </Checkbox.Content>
+                      </Checkbox>
+                      {field.value === 'true' && (
+                        <p className="text-warning text-sm">
+                          {t('settings.autoContextCompress.warning')}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </ControlledNextUIFormWrapper>
+              </div>
+              <div className="col-span-2">
+                <ControlledNextUIFormWrapper
+                  control={control}
+                  description={t('settings.llmExtraBody.description')}
+                  label={t('settings.llmExtraBody.label')}
+                  name="llmExtraBody"
+                  rules={{
+                    validate: (value) => {
+                      if (!value.trim()) {
+                        return true
+                      }
+                      try {
+                        const parsed: unknown = JSON.parse(value)
+                        return (
+                          (typeof parsed === 'object' &&
+                            parsed !== null &&
+                            !Array.isArray(parsed)) ||
+                          t('settings.llmExtraBody.invalid')
+                        )
+                      } catch {
+                        return t('settings.llmExtraBody.invalid')
+                      }
+                    },
+                  }}
+                >
+                  <TextArea
+                    disabled={isSaving}
+                    placeholder='{"thinking": {"type": "disabled"}}'
+                  />
+                </ControlledNextUIFormWrapper>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="col-span-2">
+                <ControlledNextUIFormWrapper
+                  control={control}
+                  description={t('settings.codex.executableDescription')}
+                  label={t('settings.codex.executable')}
+                  name="codexExecutable"
+                  rules={{
+                    validate: (value) =>
+                      !value.trim() ||
+                      /^([A-Za-z]:[\\/]|\\\\|\/)/.test(value.trim()) ||
+                      t('settings.codex.absolutePathRequired'),
+                  }}
+                >
+                  <Input
+                    disabled={isSaving || isTesting}
+                    placeholder={t('settings.codex.executablePlaceholder')}
+                  />
+                </ControlledNextUIFormWrapper>
+              </div>
+              <ControlledNextUIFormWrapper
+                control={control}
+                description={t('settings.codex.modelDescription')}
+                label={t('settings.codex.model')}
+                name="codexModel"
+              >
+                <Input
+                  disabled={isSaving || isTesting}
+                  placeholder={t('settings.codex.modelPlaceholder')}
+                />
+              </ControlledNextUIFormWrapper>
+              <ControlledNextUIFormWrapper
+                control={control}
+                label={t('settings.codex.timeout')}
+                name="codexTimeoutSeconds"
+                rules={{
+                  validate: (value) => {
+                    const seconds = Number(value)
+                    return (
+                      (Number.isInteger(seconds) &&
+                        seconds >= 30 &&
+                        seconds <= 3600) ||
+                      t('settings.codex.timeoutRange')
+                    )
+                  },
+                }}
+              >
+                <Input
+                  disabled={isSaving || isTesting}
+                  inputMode="numeric"
+                  min={30}
+                  max={3600}
+                  step={1}
+                  type="number"
+                />
+              </ControlledNextUIFormWrapper>
+            </>
+          )}
         </Card.Content>
       </Card>
 
       <div className="flex items-center justify-between gap-4">
         <div className="text-muted flex items-center gap-2 text-sm">
-          {loadError ?? (
-            <span className="text-danger">加载设置失败：{loadError}</span>
-          )}
+          {loadError && <span className="text-danger">{loadError}</span>}
         </div>
         <div className="flex items-center gap-3">
           <Button
             className="min-w-28 gap-2 rounded-xl"
-            isDisabled={isSaving || Boolean(loadError) || !hasWailsRuntime()}
+            isDisabled={
+              isSaving || isTesting || Boolean(loadError) || !hasWailsRuntime()
+            }
+            isPending={isTesting}
             variant="secondary"
             onPress={confirmTestConnection}
           >
@@ -432,7 +572,9 @@ export default function SettingsPage() {
           </Button>
           <Button
             className="min-w-28 gap-2 rounded-xl"
-            isDisabled={isSaving || Boolean(loadError) || !hasWailsRuntime()}
+            isDisabled={
+              isSaving || isTesting || Boolean(loadError) || !hasWailsRuntime()
+            }
             isPending={isSaving}
             variant="primary"
             onPress={() => void save()}

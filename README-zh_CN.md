@@ -18,11 +18,17 @@
 
 ## 快速开始
 
-1. 从 [Release](https://github.com/vudsen/ai-disk-cleaner/releases) 列表中下载最新版本 exe (目前仅支持 Windows)
-2. 下载完毕后，将 exe 放在一个单独的文件夹中(应用启动后会在 exe 当前目录生成数据文件)
-3. 打开应用 (推荐以管理员权限打开，否则某些删除或迁移操作可能会报错)
-4. 进入设置页面，配置大模型参数
-5. 回到首页，开始扫描
+1. 从 [Release](https://github.com/vudsen/ai-disk-cleaner/releases) 下载 Windows `.exe` 或 Linux `amd64` `.tar.gz`。当前 Linux 构建在 Ubuntu 24.04 amd64 上验证。
+2. Windows 版放在单独目录中，数据仍保存在 exe 旁边。Linux 版解压后在解压目录运行 `./ai-disk-cleaner`；运行时需要 GTK 3 和 WebKit2GTK 4.1。
+3. Linux 数据保存在 `$XDG_DATA_HOME/ai-disk-cleaner`（默认 `$HOME/.local/share/ai-disk-cleaner`），日志保存在 `$XDG_STATE_HOME/ai-disk-cleaner/logs`（默认 `$HOME/.local/state/ai-disk-cleaner/logs`）。旧测试版数据不会自动迁移。关闭应用后，先备份旧 `data.db`，再移动到新数据目录；不要覆盖新版本已创建的数据库。
+4. 打开设置页面，配置大模型参数。
+5. 回到首页，开始扫描。Windows 推荐以管理员权限运行；Linux 请使用普通桌面用户运行。
+
+### 选择大模型服务
+
+在设置中选择兼容 OpenAI 的 API 或本地 Codex CLI。API 模式继续使用独立的 URL、密钥、模型、Token 上限和额外请求参数。本地 Codex 模式需要单独安装 Codex CLI，并在终端运行 `codex login` 完成已有账号登录。可将可执行文件路径留空，让应用从 PATH 查找 `codex`，也可以填写一个绝对路径。Windows 请指定原生可执行文件，不要选择 `.cmd` 或 `.bat` 包装器。
+
+Codex 模型覆盖值为可选项；留空时继承 Codex CLI 配置的模型。分析超时可设置为 30 到 3600 秒。Codex 仍需联网访问其配置的模型服务；账号权限、额度和用量取决于该服务。应用不会安装 Codex、代替用户登录或复制认证令牌。就绪检查只确认 CLI 和登录前提可用；要验证模型是否实际响应，请使用“测试连接”。
 
 ## 运作原理
 

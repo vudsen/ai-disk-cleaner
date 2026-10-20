@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	migrationmodel "ai-disk-cleanner/backend/data/models/migration"
+	"ai-disk-cleanner/backend/util"
 )
 
 type migrationStepStage uint8
@@ -198,5 +199,5 @@ func resolveCopyPaths(source string, destinationDirectory string, name string) (
 }
 
 func migrationStepKey(source string, dest string) string {
-	return strings.ToLower(filepath.Clean(source)) + "\x00" + strings.ToLower(filepath.Clean(dest))
+	return util.PathKey(source) + "\x00" + util.PathKey(dest)
 }

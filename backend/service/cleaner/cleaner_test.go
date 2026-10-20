@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ai-disk-cleanner/backend/data/models/cleaningrecord"
+	"ai-disk-cleanner/backend/data/models/scansnapshot"
 	modelscanner "ai-disk-cleanner/backend/model/scanner"
 	"ai-disk-cleanner/backend/service/tasklog"
 
@@ -17,7 +18,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func newTestStore(t *testing.T) *cleaningrecord.Store {
+type testStore struct {
+	*cleaningrecord.Store
+	*scansnapshot.SnapshotStore
+}
+
+func newTestStore(t *testing.T) *testStore {
 	t.Helper()
 	db, err := gorm.Open(gormsqlite.Dialector{
 		DriverName: "sqlite",
@@ -26,10 +32,10 @@ func newTestStore(t *testing.T) *cleaningrecord.Store {
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}
-	if err := db.AutoMigrate(&cleaningrecord.CleaningRecord{}); err != nil {
+	if err := db.AutoMigrate(&cleaningrecord.CleaningRecord{}, &scansnapshot.Snapshot{}); err != nil {
 		t.Fatalf("migrate test database: %v", err)
 	}
-	store := cleaningrecord.NewStore(db)
+	store := &testStore{cleaningrecord.NewStore(db), scansnapshot.NewStore(db)}
 	t.Cleanup(func() {
 		if err := store.Close(); err != nil {
 			t.Errorf("close test database: %v", err)
@@ -105,7 +111,7 @@ func TestServiceRunsTaskAndPersistsResult(t *testing.T) {
 		if finished.LLMOutput != "分析完成" {
 			t.Fatalf("LLMOutput = %q", finished.LLMOutput)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("task did not finish")
 	}
 

@@ -9,7 +9,10 @@ import {
 import { Outlet, useLocation, useNavigate } from 'react-router'
 import { useEffect, useMemo } from 'react'
 import { showDialog } from '@/components/DialogProvider'
-import { IsRunningAsAdministrator } from '../../wailsjs/go/main/App'
+import {
+  GetPlatformInfo,
+  IsRunningAsAdministrator,
+} from '../../wailsjs/go/main/App'
 import { useTranslation } from 'react-i18next'
 
 let administratorWarningChecked = false
@@ -34,8 +37,12 @@ export default function Layout() {
     }
     administratorWarningChecked = true
 
-    void IsRunningAsAdministrator()
-      .then((isAdministrator) => {
+    void GetPlatformInfo()
+      .then(async (platformInfo) => {
+        if (platformInfo.os !== 'windows') {
+          return
+        }
+        const isAdministrator = await IsRunningAsAdministrator()
         if (isAdministrator) {
           return
         }
@@ -117,7 +124,7 @@ export default function Layout() {
     : (pageDetails[location.pathname] ?? pageDetails['/home'])
 
   return (
-    <div className="text-foreground min-h-screen bg-white text-left">
+    <div className="text-foreground min-h-screen bg-white text-left [&_.button]:transform-none [&_.button]:will-change-auto">
       <div className="border-default mx-auto flex h-screen overflow-hidden border shadow-sm">
         <aside className="border-default flex w-52 shrink-0 flex-col border-r px-5 py-7">
           <div className="flex h-12 items-center gap-3 px-3">
@@ -147,8 +154,11 @@ export default function Layout() {
               return (
                 <Button
                   key={item.path}
-                  className={`h-12 w-full justify-start gap-3 rounded-lg px-4 text-sm font-semibold transition-colors ${
-                    isActive ? 'bg-default/40 text-foreground' : 'text-muted'
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`h-12 w-full justify-start gap-3 rounded-lg px-4 text-sm font-semibold transition-none ${
+                    isActive
+                      ? 'bg-accent-soft text-accent-soft-foreground'
+                      : 'text-muted'
                   }`}
                   variant="ghost"
                   onPress={() => navigate(item.path)}
@@ -161,7 +171,7 @@ export default function Layout() {
           </nav>
         </aside>
 
-        <main className="min-w-0 flex-1 overflow-y-auto">
+        <main className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
           <header className="flex min-h-36 items-end justify-between gap-8 px-10 pt-8 pb-7">
             <div>
               <p className="text-accent mb-2 text-xs font-semibold tracking-[0.14em]">

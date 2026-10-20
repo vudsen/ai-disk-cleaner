@@ -17,6 +17,24 @@
     "llmNotConfiguredDialogTitle": "需要先配置 LLM",
     "llmNotConfiguredDialogMessage": "开始扫描前，请先在设置中完整填写 LLM Secret、URL 和模型。",
     "llmConfigCheckFailed": "检查 LLM 配置失败",
+    "providerStatus": {
+      "config_missing": {
+        "title": "服务配置不完整",
+        "description": "请先完成当前服务模式所需的设置。"
+      },
+      "executable_not_found": {
+        "title": "未找到 Codex CLI",
+        "description": "请安装 Codex CLI，或在设置中指定可执行文件路径。"
+      },
+      "cli_unsupported": {
+        "title": "Codex CLI 版本不受支持",
+        "description": "请使用兼容版本的 Codex CLI 后重试。"
+      },
+      "not_authenticated": {
+        "title": "Codex CLI 尚未登录",
+        "description": "请在终端运行 codex login，然后返回应用重试。"
+      }
+    },
     "goToSettings": "前往设置",
     "specDirectory": "已选目录",
     "specDirectoryPlaceholder": "请选择要扫描的目录",
@@ -26,6 +44,11 @@
     "used": "已使用",
     "total": "总容量",
     "currentUsage": "磁盘占用",
+    "platformInfoFailed": "无法读取平台信息，请手动选择要扫描的目录。",
+    "noCapacityInfo": "该路径没有可用的容量信息",
+    "unknownDisk": "所选磁盘当前不可用",
+    "noDiskList": "当前没有可用的挂载磁盘，仍可选择自定义目录进行扫描。",
+    "diskUsagePercent": "挂载文件系统使用率",
     "historyScan": "历史扫描记录",
     "historyScanDesc": "最近完成的扫描记录",
     "noHistoryRecord": "暂无清理记录"
@@ -40,6 +63,8 @@
     "detail": {
       "foundFiles": "发现的文件",
       "scannedSize": "已扫描大小",
+      "scanIncompleteTitle": "扫描结果不完整",
+      "scanIncomplete": "本次扫描跳过了 {{ excluded }} 个路径，并遇到 {{ errors }} 个读取错误，结果可能不完整。",
       "currentStatus": "状态",
       "diskUsage": "磁盘主要占用",
       "diskUsageDesc": "磁盘主要占用展示了垃圾文件的分布及删除风险等级",
@@ -105,7 +130,11 @@
       "migrateRetryStep": "重试第 {{ step }} 步",
       "backToRecords": "返回清理记录",
       "deleteSuccess": "删除成功",
-      "deleteSuccessMsg": "已删除 {{ path }}"
+      "deleteSuccessMsg": "已删除 {{ path }}",
+      "retryAnalysis": "重新分析",
+      "retryAnalysisDescription": "使用已保存的扫描快照和当前 LLM 配置，不重新扫描磁盘。旧记录未保存快照时会明确提示。",
+      "retryAnalysisFailed": "重试分析失败",
+      "generating": "生成中"
     }
   },
   "migration": {
@@ -159,6 +188,24 @@
     "maxCleaningRecordDesc": "应用启动时将删除超出上限的记录",
     "llmService": "LLM 服务",
     "llmServiceDesc": "配置用于解析文件系统树的 LLM 模型",
+    "provider": {
+      "label": "服务提供方",
+      "api": "兼容 OpenAI 的 API",
+      "apiDescription": "使用独立配置 URL、密钥和模型的兼容 API 服务。",
+      "codex": "本地 Codex CLI",
+      "codexDescription": "使用已安装的 Codex CLI 和终端中的现有登录状态；应用不会代为安装或登录。"
+    },
+    "codex": {
+      "executable": "Codex 可执行文件路径",
+      "executableDescription": "留空时会从应用 PATH 查找 codex。Windows 请选原生可执行文件，不要选 .cmd 或 .bat 包装器。",
+      "executablePlaceholder": "可选的绝对路径",
+      "absolutePathRequired": "请输入绝对路径，或留空使用 PATH 查找。",
+      "model": "模型覆盖值",
+      "modelDescription": "可选。留空时使用 Codex CLI 中配置的默认模型。",
+      "modelPlaceholder": "使用 Codex CLI 默认模型",
+      "timeout": "分析超时（秒）",
+      "timeoutRange": "请输入 30 到 3600 之间的整数。"
+    },
     "testConnection": {
       "button": "测试连接",
       "confirmTitle": "测试 LLM 连接",
@@ -187,7 +234,10 @@
       "help": "首次启动时将使用系统语言，手动选择后会记住您的设置。",
       "zh_CN": "简体中文",
       "en": "English"
-    }
+    },
+    "saved": "设置已保存",
+    "savedDescription": "配置已更新",
+    "saveFailed": "保存设置失败"
   },
   "route": {
     "workbench": "工作台",

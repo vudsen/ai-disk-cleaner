@@ -8,6 +8,9 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+
+	modelscanner "ai-disk-cleanner/backend/model/scanner"
+	"ai-disk-cleanner/backend/util"
 )
 
 // TrashFileLevel describes the risk of a cleanup candidate.
@@ -81,17 +84,35 @@ const (
 
 // CleaningRecord records the result of a disk scan and cleanup.
 type CleaningRecord struct {
-	ID           int64       `gorm:"column:id;primaryKey;autoIncrement:false" json:"id"`
-	StartTime    time.Time   `gorm:"column:start_time;not null" json:"startTime"`
-	FreedSize    int64       `gorm:"column:freed_size;not null" json:"freedSize"`
-	TrashSize    int64       `gorm:"column:trash_size;not null" json:"trashSize"`
-	TrashFiles   []TrashFile `gorm:"column:trash_files;type:text;serializer:json;not null" json:"trashFiles"`
-	TopUsages    []DiskUsage `gorm:"column:top_usages;type:text;serializer:json;not null" json:"topUsages"`
-	Path         string      `gorm:"column:path;not null" json:"path"`
-	LLMOutput    string      `gorm:"column:llm_output;not null" json:"llmOutput"`
-	TokenUsage   int64       `gorm:"column:token_usage;not null" json:"tokenUsage"`
-	State        string      `gorm:"column:state;not null" json:"state"`
-	ErrorMessage string      `gorm:"column:error_message;not null;default:''" json:"errorMessage"`
+	ScanProgress *modelscanner.ScanProgress `gorm:"-" json:"scanProgress,omitempty"`
+	ID           int64                      `gorm:"column:id;primaryKey;autoIncrement:false" json:"id"`
+	StartTime    time.Time                  `gorm:"column:start_time;not null" json:"startTime"`
+	FreedSize    int64                      `gorm:"column:freed_size;not null" json:"freedSize"`
+	TrashSize    int64                      `gorm:"column:trash_size;not null" json:"trashSize"`
+	TrashFiles   []TrashFile                `gorm:"column:trash_files;type:text;serializer:json;not null" json:"trashFiles"`
+	TopUsages    []DiskUsage                `gorm:"column:top_usages;type:text;serializer:json;not null" json:"topUsages"`
+	Path         string                     `gorm:"column:path;not null" json:"path"`
+	LLMOutput    string                     `gorm:"column:llm_output;not null" json:"llmOutput"`
+	TokenUsage   int64                      `gorm:"column:token_usage;not null" json:"tokenUsage"`
+	State        string                     `gorm:"column:state;not null" json:"state"`
+	ErrorMessage string                     `gorm:"column:error_message;not null;default:''" json:"errorMessage"`
+	ScanSummary  *modelscanner.ScanSummary  `gorm:"column:scan_summary;type:text;serializer:json" json:"scanSummary,omitempty"`
+}
+
+// SaveCleaningRecordScanSummary persists scan coverage separately from analysis completion.
+func (store *Store) SaveCleaningRecordScanSummary(ctx context.Context, id int64, summary modelscanner.ScanSummary) error {
+	update := &CleaningRecord{ScanSummary: &summary}
+	result := store.db.WithContext(ctx).Model(&CleaningRecord{}).
+		Where("id = ?", id).
+		Select("ScanSummary").
+		Updates(update)
+	if result.Error != nil {
+		return fmt.Errorf("save cleaning record %d scan summary: %w", id, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("save cleaning record %d scan summary: %w", id, gorm.ErrRecordNotFound)
+	}
+	return nil
 }
 
 // TableName keeps the table name singular as required by the database schema.
@@ -263,7 +284,7 @@ func trashFileMatchesSource(rootPath string, candidatePath string, source string
 		target = filepath.Join(rootPath, target)
 	}
 	target, err := filepath.Abs(filepath.Clean(target))
-	return err == nil && strings.EqualFold(target, source)
+	return err == nil && util.SamePath(target, source)
 }
 
 // ListCleaningRecords returns cleaning records ordered from newest to oldest.

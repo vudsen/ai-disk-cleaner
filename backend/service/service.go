@@ -9,6 +9,7 @@ import (
 	"ai-disk-cleanner/backend/service/cleaner"
 	"ai-disk-cleanner/backend/service/cleaninghistory"
 	"ai-disk-cleanner/backend/service/migration"
+	"ai-disk-cleanner/backend/service/platform"
 	"ai-disk-cleanner/backend/service/scanner"
 	"ai-disk-cleanner/backend/service/setting"
 	"ai-disk-cleanner/backend/service/tasklog"
@@ -23,6 +24,7 @@ var (
 	scannerService          *scanner.Service
 	settingService          *setting.Service
 	taskLogService          *tasklog.Service
+	platformService         *platform.Service
 	buildServices           = setupServices
 )
 
@@ -34,6 +36,7 @@ type services struct {
 	scanner         *scanner.Service
 	setting         *setting.Service
 	taskLog         *tasklog.Service
+	platform        *platform.Service
 }
 
 // Initialize creates every application service during Wails startup.
@@ -62,10 +65,11 @@ func setupServices() (services, error) {
 	newSettingService := setting.NewService(store)
 	newAnalyzerService := analyzer.NewService(store)
 	newTaskLogService := tasklog.NewService()
+	newPlatformService := platform.NewService()
 	newCleaningHistoryService := cleaninghistory.NewService(store, newTaskLogService)
 	newMigrationService := migration.NewService(store)
 	newCleanerService := cleaner.NewService(
-		store.Store,
+		store,
 		newAnalyzerService,
 		newScannerService,
 		newTaskLogService,
@@ -83,6 +87,7 @@ func setupServices() (services, error) {
 		scanner:         newScannerService,
 		setting:         newSettingService,
 		taskLog:         newTaskLogService,
+		platform:        newPlatformService,
 	}, nil
 }
 
@@ -91,6 +96,7 @@ func publishServices(created services) {
 	scannerService = created.scanner
 	settingService = created.setting
 	taskLogService = created.taskLog
+	platformService = created.platform
 	analyzerService = created.analyzer
 	cleaningHistoryService = created.cleaningHistory
 	migrationService = created.migration
@@ -144,4 +150,11 @@ func GetSettingService() *setting.Service {
 		panic("service manager: setting service is not initialized")
 	}
 	return settingService
+}
+
+func GetPlatformService() *platform.Service {
+	if platformService == nil {
+		panic("service manager: platform service is not initialized")
+	}
+	return platformService
 }

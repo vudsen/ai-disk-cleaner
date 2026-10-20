@@ -1,5 +1,23 @@
 export namespace analyzer {
 	
+	export class ProviderStatus {
+	    provider: string;
+	    ready: boolean;
+	    code: string;
+	    version: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ProviderStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.provider = source["provider"];
+	        this.ready = source["ready"];
+	        this.code = source["code"];
+	        this.version = source["version"];
+	    }
+	}
 	export class TestConnectionResult {
 	    type: string;
 	    i18nMessage: string;
@@ -28,6 +46,7 @@ export namespace cleaner {
 	    errorMessage: string;
 	    llmOutput: string;
 	    scanProgress: scanner.ScanProgress;
+	    scanSummary: scanner.ScanSummary;
 	    stopping: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -43,6 +62,7 @@ export namespace cleaner {
 	        this.errorMessage = source["errorMessage"];
 	        this.llmOutput = source["llmOutput"];
 	        this.scanProgress = this.convertValues(source["scanProgress"], scanner.ScanProgress);
+	        this.scanSummary = this.convertValues(source["scanSummary"], scanner.ScanSummary);
 	        this.stopping = source["stopping"];
 	    }
 	
@@ -122,6 +142,7 @@ export namespace cleaningrecord {
 	    }
 	}
 	export class CleaningRecord {
+	    scanProgress?: scanner.ScanProgress;
 	    id: number;
 	    // Go type: time
 	    startTime: any;
@@ -134,6 +155,7 @@ export namespace cleaningrecord {
 	    tokenUsage: number;
 	    state: string;
 	    errorMessage: string;
+	    scanSummary?: scanner.ScanSummary;
 	
 	    static createFrom(source: any = {}) {
 	        return new CleaningRecord(source);
@@ -141,6 +163,7 @@ export namespace cleaningrecord {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.scanProgress = this.convertValues(source["scanProgress"], scanner.ScanProgress);
 	        this.id = source["id"];
 	        this.startTime = this.convertValues(source["startTime"], null);
 	        this.freedSize = source["freedSize"];
@@ -152,6 +175,7 @@ export namespace cleaningrecord {
 	        this.tokenUsage = source["tokenUsage"];
 	        this.state = source["state"];
 	        this.errorMessage = source["errorMessage"];
+	        this.scanSummary = this.convertValues(source["scanSummary"], scanner.ScanSummary);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -242,6 +266,22 @@ export namespace model {
 	        this.used = source["used"];
 	    }
 	}
+	export class PlatformInfo {
+	    os: string;
+	    homeDirectory: string;
+	    defaultScanPath: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new PlatformInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.os = source["os"];
+	        this.homeDirectory = source["homeDirectory"];
+	        this.defaultScanPath = source["defaultScanPath"];
+	    }
+	}
 
 }
 
@@ -262,6 +302,54 @@ export namespace scanner {
 	        this.itemCount = source["itemCount"];
 	        this.scannedSize = source["scannedSize"];
 	    }
+	}
+	export class ScanWarning {
+	    path: string;
+	    code: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ScanWarning(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.code = source["code"];
+	    }
+	}
+	export class ScanSummary {
+	    excludedCount: number;
+	    readErrorCount: number;
+	    warnings: ScanWarning[];
+	
+	    static createFrom(source: any = {}) {
+	        return new ScanSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.excludedCount = source["excludedCount"];
+	        this.readErrorCount = source["readErrorCount"];
+	        this.warnings = this.convertValues(source["warnings"], ScanWarning);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

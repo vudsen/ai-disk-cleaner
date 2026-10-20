@@ -1,10 +1,14 @@
-import { Button, Card, Checkbox, Label, toast } from '@heroui/react'
+import { Button, Card, Checkbox, Label } from '@heroui/react'
+import { toast } from '@/util/toast'
 import type { cleaner } from '../../../../wailsjs/go/models'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, RotateCcw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import useCleaningTask from '@/hooks/useCleaningTask'
-import { DeleteTrashFiles } from '../../../../wailsjs/go/main/App'
+import {
+  DeleteTrashFiles,
+  RetryCleaning,
+} from '../../../../wailsjs/go/main/App'
 import LLMOutput from './LLMOutput'
 import ScanProgressHeader from './ScanProgressHeader'
 import ScanResultStats from './ScanResultStats'
@@ -19,11 +23,12 @@ import { useTranslation } from 'react-i18next'
 const runningStates = new Set(['SCANNING', 'ANALYZING'])
 
 export default function CleanupDetailPage() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { id } = useParams()
   const { error, isLoading, isStopping, records, refreshRecords, stop, task } =
-    useCleaningTask()
+    useCleaningTask({ streamOutput: true })
+  const [isRetrying, setIsRetrying] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [deleteFailures, setDeleteFailures] = useState<cleaner.DeleteFailure[]>(
     [],
@@ -96,6 +101,22 @@ export default function CleanupDetailPage() {
     await refreshRecords()
   }
 
+  const handleRetryAnalysis = async () => {
+    setIsRetrying(true)
+    try {
+      const next = await RetryCleaning(
+        recordID,
+        i18n.resolvedLanguage ?? i18n.language,
+      )
+      await refreshRecords()
+      navigate(`/cleanup/${next.id}`)
+    } catch (reason) {
+      toastError(reason, t('cleanup.detail.retryAnalysisFailed'))
+    } finally {
+      setIsRetrying(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Button
@@ -113,9 +134,29 @@ export default function CleanupDetailPage() {
             detail={detail}
             isRunning={isRunning}
             isStopping={isStopping || Boolean(currentTask?.stopping)}
-            scanProgress={currentTask?.scanProgress}
+            scanProgress={currentTask?.scanProgress ?? record?.scanProgress}
+            scanSummary={detail.scanSummary}
             onStop={() => void stop()}
           />
+
+          {['ERROR', 'CANCELLED', 'DONE'].includes(detail.state) && (
+            <div className="flex items-center gap-3">
+              <Button
+                variant="secondary"
+                isDisabled={
+                  isRetrying || Boolean(task && runningStates.has(task.state))
+                }
+                isPending={isRetrying}
+                onPress={() => void handleRetryAnalysis()}
+              >
+                <RotateCcw aria-hidden="true" size={16} />
+                {t('cleanup.detail.retryAnalysis')}
+              </Button>
+              <p className="text-muted text-sm">
+                {t('cleanup.detail.retryAnalysisDescription')}
+              </p>
+            </div>
+          )}
 
           {record && isAnalysisComplete && (
             <>

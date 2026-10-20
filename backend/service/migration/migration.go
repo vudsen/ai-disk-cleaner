@@ -12,6 +12,7 @@ import (
 
 	appctx "ai-disk-cleanner/backend/ctx"
 	migrationmodel "ai-disk-cleanner/backend/data/models/migration"
+	"ai-disk-cleanner/backend/util"
 )
 
 type migrationStore interface {
@@ -362,7 +363,7 @@ func pathContains(parent, child string) bool {
 }
 
 func samePath(left, right string) bool {
-	return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+	return util.SamePath(left, right)
 }
 
 func joinErrors(label string, err error, additional ...any) error {
